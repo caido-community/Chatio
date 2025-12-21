@@ -1,4 +1,4 @@
-import type { FrontendSDK } from '../types';
+import type { FrontendSDK } from "../types";
 
 export interface ChatSettings {
   provider: string;
@@ -18,7 +18,7 @@ export interface ChatSettings {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
   files?: any[];
@@ -26,21 +26,23 @@ export interface ChatMessage {
 }
 
 export interface AppState {
-  chatId: string;
-  messageCount: number;
+  activeChatId: string;
+  selectedProvider?: string;
+  selectedModel?: string;
+  selectedModule?: string;
 }
 
 export interface ProjectStorageData {
   settings?: ChatSettings;
   chatHistory?: ChatMessage[];
   appState?: AppState;
-  theme?: 'light' | 'dark';
+  theme?: "light" | "dark";
   selectedModule?: any;
 }
 
 export interface GlobalStorageData {
   globalSettings?: {
-    theme?: 'light' | 'dark';
+    theme?: "light" | "dark";
     preferences?: any;
     providers?: Record<string, any>;
     apiKeys?: Record<string, string>;
@@ -71,9 +73,9 @@ export class CaidoStorageService {
 
   private async initializeCache() {
     try {
-      const data = await this.sdk.storage.get() as GlobalStorageData | null;
+      const data = (await this.sdk.storage.get()) as GlobalStorageData | null;
       this.cache = data || { projects: {}, globalSettings: {} };
-      
+
       // Ensure required objects exist
       if (!this.cache.projects) {
         this.cache.projects = {};
@@ -81,30 +83,35 @@ export class CaidoStorageService {
       if (!this.cache.globalSettings) {
         this.cache.globalSettings = {};
       }
-      
+
       // Get current project ID
       this.currentProjectId = await this.sdk.backend.getCurrentProjectId();
-      
+
       this.isInitialized = true;
     } catch (error) {
-      console.error('❌ [Storage] Failed to initialize Caido storage:', error);
+      console.error("[Storage] Failed to initialize Caido storage:", error);
       this.cache = { projects: {}, globalSettings: {} };
       this.isInitialized = true;
     }
   }
 
   private setupProjectChangeListener() {
-    this.sdk.backend.onEvent("chatio:projectChange", async (projectId: string | null) => {
-      this.currentProjectId = projectId;
-      
-      window.dispatchEvent(new CustomEvent('chatio-project-changed', { 
-        detail: { projectId } 
-      }));
-    });
+    this.sdk.backend.onEvent(
+      "chatio:projectChange",
+      async (projectId: string | null) => {
+        this.currentProjectId = projectId;
+
+        window.dispatchEvent(
+          new CustomEvent("chatio-project-changed", {
+            detail: { projectId },
+          }),
+        );
+      },
+    );
   }
 
   private getProjectKey(): string {
-    return this.currentProjectId || 'global';
+    return this.currentProjectId || "global";
   }
 
   private getProjectData(): ProjectStorageData {
@@ -120,7 +127,7 @@ export class CaidoStorageService {
 
   private async waitForInitialization() {
     if (!this.isInitialized) {
-      await new Promise(resolve => {
+      await new Promise((resolve) => {
         const check = () => {
           if (this.isInitialized) {
             resolve(undefined);
@@ -143,24 +150,24 @@ export class CaidoStorageService {
     await this.waitForInitialization();
     const globalSettings = this.cache.globalSettings;
     if (!globalSettings) return null;
-    
+
     // Convert global settings to ChatSettings format
     const settings = {
-      provider: '', // No default provider
-      model: '',    // No default model
-      apiKey: '',
-      baseUrl: '',
-      systemPrompt: globalSettings.systemPrompt || '',
+      provider: "", // No default provider
+      model: "", // No default model
+      apiKey: "",
+      baseUrl: "",
+      systemPrompt: globalSettings.systemPrompt || "",
       maxTokens: globalSettings.maxTokens || 2048,
       temperature: globalSettings.temperature || 0.7,
       providers: globalSettings.providers || {},
       chatSettings: globalSettings.chatSettings || {
         maxMessages: 20,
-        systemPrompt: globalSettings.systemPrompt || '',
-        autoSave: true
-      }
+        systemPrompt: globalSettings.systemPrompt || "",
+        autoSave: true,
+      },
     } as ChatSettings;
-    
+
     return settings;
   }
 
@@ -169,22 +176,23 @@ export class CaidoStorageService {
     if (!this.cache.globalSettings) {
       this.cache.globalSettings = {};
     }
-    
+
     // Store settings globally
     this.cache.globalSettings.providers = settings.providers || {};
     this.cache.globalSettings.systemPrompt = settings.systemPrompt;
     this.cache.globalSettings.maxTokens = settings.maxTokens;
     this.cache.globalSettings.temperature = settings.temperature;
-    
+
     // Store chat settings if provided (for backward compatibility and additional fields)
     if (settings.chatSettings) {
       this.cache.globalSettings.chatSettings = settings.chatSettings;
       // Ensure systemPrompt is also copied from chatSettings if present
       if (settings.chatSettings.systemPrompt) {
-        this.cache.globalSettings.systemPrompt = settings.chatSettings.systemPrompt;
+        this.cache.globalSettings.systemPrompt =
+          settings.chatSettings.systemPrompt;
       }
     }
-    
+
     await this.saveToStorage();
   }
 
@@ -195,7 +203,7 @@ export class CaidoStorageService {
       const projectData = this.getProjectData();
       return projectData.chatHistory || [];
     } catch (error) {
-      console.error('[Storage] Failed to load chat history:', error);
+      console.error("[Storage] Failed to load chat history:", error);
       return null;
     }
   }
@@ -220,16 +228,16 @@ export class CaidoStorageService {
     await this.saveToStorage();
   }
 
-  async getTheme(): Promise<'light' | 'dark'> {
+  async getTheme(): Promise<"light" | "dark"> {
     await this.waitForInitialization();
     // Theme is global, not project-specific
     if (!this.cache.globalSettings) {
       this.cache.globalSettings = {};
     }
-    return this.cache.globalSettings.theme || 'light';
+    return this.cache.globalSettings.theme || "light";
   }
 
-  async setTheme(theme: 'light' | 'dark'): Promise<void> {
+  async setTheme(theme: "light" | "dark"): Promise<void> {
     await this.waitForInitialization();
     if (!this.cache.globalSettings) {
       this.cache.globalSettings = {};
@@ -294,7 +302,7 @@ export class CaidoStorageService {
     try {
       await this.sdk.storage.set(this.cache);
     } catch (error) {
-      console.error('[Storage] Failed to save to Caido storage:', error);
+      console.error("[Storage] Failed to save to Caido storage:", error);
       throw error;
     }
   }
@@ -308,5 +316,3 @@ export class CaidoStorageService {
     });
   }
 }
-
- 

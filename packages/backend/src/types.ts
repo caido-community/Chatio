@@ -1,6 +1,6 @@
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
   files?: FileAttachment[];
@@ -59,4 +59,4 @@ export interface SendMessageRequest {
     maxTokens?: number;
     temperature?: number;
   };
-} 
+}

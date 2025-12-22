@@ -63,9 +63,9 @@ const filteredSessions = computed(() => {
   );
 });
 
-const loadReplaySessions = async () => {
+const loadReplaySessions = () => {
   try {
-    const sessions = await sdk.backend.getReplaySessions();
+    const sessions = sdk.replay.getSessions();
     replaySessions.value = sessions;
   } catch (error) {
     console.error("Failed to load replay sessions:", error);
@@ -247,126 +247,68 @@ onMounted(() => {
 </script>
 
 <template>
-  <div
-    class="bg-surface-900 border-t border-surface-700 p-4 relative"
-    style="min-height: 180px"
-  >
-    <div
-      class="flex flex-col gap-3 h-full"
-      :class="{ 'ring-2 ring-primary-500 ring-opacity-50': isDragOver }"
-      @drop="handleDrop"
-      @dragover.prevent="isDragOver = true"
-      @dragleave="isDragOver = false"
-    >
-      <div
-        v-show="showMentions"
-        class="absolute bottom-full left-0 mb-2 w-72 bg-surface-800 border border-surface-700 rounded-lg shadow-xl overflow-hidden z-50 flex flex-col"
-      >
+  <div class="bg-surface-900 border-t border-surface-700 p-4 relative" style="min-height: 180px">
+    <div class="flex flex-col gap-3 h-full" :class="{ 'ring-2 ring-primary-500 ring-opacity-50': isDragOver }"
+      @drop="handleDrop" @dragover.prevent="isDragOver = true" @dragleave="isDragOver = false">
+      <div v-show="showMentions"
+        class="absolute bottom-full left-0 mb-2 w-72 bg-surface-800 border border-surface-700 rounded-lg shadow-xl overflow-hidden z-50 flex flex-col">
         <div
-          class="px-3 py-2 text-xs font-semibold text-surface-400 bg-surface-900/50 border-b border-surface-700 uppercase tracking-wider flex justify-between items-center"
-        >
+          class="px-3 py-2 text-xs font-semibold text-surface-400 bg-surface-900/50 border-b border-surface-700 uppercase tracking-wider flex justify-between items-center">
           <span>Select Session</span>
-          <span
-            v-if="filteredSessions.length > 0"
-            class="bg-surface-700 text-surface-300 px-1.5 rounded-sm"
-            >{{ filteredSessions.length }}</span
-          >
+          <span v-if="filteredSessions.length > 0" class="bg-surface-700 text-surface-300 px-1.5 rounded-sm">{{
+            filteredSessions.length }}</span>
         </div>
 
         <div class="max-h-60 overflow-y-auto custom-scrollbar p-1">
-          <div
-            v-if="filteredSessions.length === 0"
-            class="px-3 py-4 text-center text-sm text-surface-500"
-          >
+          <div v-if="filteredSessions.length === 0" class="px-3 py-4 text-center text-sm text-surface-500">
             No sessions found
           </div>
 
-          <div
-            v-for="(session, index) in filteredSessions"
-            :key="session.id"
+          <div v-for="(session, index) in filteredSessions" :key="session.id"
             class="px-2 py-2 cursor-pointer flex items-center gap-2 text-sm rounded-md transition-colors duration-150"
-            :class="
-              index === selectedMentionIndex
+            :class="index === selectedMentionIndex
                 ? 'bg-surface-700 text-white'
                 : 'text-surface-300 hover:bg-surface-700/50'
-            "
-            @click="insertMention(session)"
-            @mouseenter="selectedMentionIndex = index"
-          >
-            <i
-              class="fas fa-play-circle text-xs"
-              :class="
-                index === selectedMentionIndex
-                  ? 'text-primary-400'
-                  : 'text-surface-500'
-              "
-            />
+              " @click="insertMention(session)" @mouseenter="selectedMentionIndex = index">
+            <i class="fas fa-play-circle text-xs" :class="index === selectedMentionIndex
+                ? 'text-primary-400'
+                : 'text-surface-500'
+              " />
             <span class="truncate">{{ session.name }}</span>
           </div>
         </div>
       </div>
       <div v-if="attachedFiles.length > 0" class="flex flex-wrap gap-2">
-        <div
-          v-for="(file, index) in attachedFiles"
-          :key="index"
-          class="flex items-center gap-2 px-3 py-2 bg-surface-800 rounded-lg text-sm"
-        >
-          <i
-            :class="
-              file.type.startsWith('image/')
-                ? 'fas fa-image text-blue-400'
-                : 'fas fa-file text-surface-400'
-            "
-          />
-          <span
-            class="max-w-[120px] truncate cursor-pointer hover:text-primary-400"
-            @click="file.type.startsWith('image/') && emit('openImage', file)"
-          >
+        <div v-for="(file, index) in attachedFiles" :key="index"
+          class="flex items-center gap-2 px-3 py-2 bg-surface-800 rounded-lg text-sm">
+          <i :class="file.type.startsWith('image/')
+              ? 'fas fa-image text-blue-400'
+              : 'fas fa-file text-surface-400'
+            " />
+          <span class="max-w-[120px] truncate cursor-pointer hover:text-primary-400"
+            @click="file.type.startsWith('image/') && emit('openImage', file)">
             {{ file.name }}
           </span>
           <span class="text-xs text-surface-500">{{
             formatFileSize(file.size)
-          }}</span>
-          <Button
-            icon="fas fa-times"
-            text
-            size="small"
-            severity="secondary"
-            @click="emit('removeFile', index)"
-          />
+            }}</span>
+          <Button icon="fas fa-times" text size="small" severity="secondary" @click="emit('removeFile', index)" />
         </div>
       </div>
 
-      <textarea
-        ref="textareaRef"
-        :value="modelValue"
-        placeholder="Message the agent..."
-        :class="{
-          'opacity-60': isLoading,
-          'text-surface-200': !isLoading,
-          'text-surface-400': isLoading,
-        }"
+      <textarea ref="textareaRef" :value="modelValue" placeholder="Message the agent..." :class="{
+        'opacity-60': isLoading,
+        'text-surface-200': !isLoading,
+        'text-surface-400': isLoading,
+      }"
         class="border-0 outline-none font-mono resize-none bg-transparent flex-1 text-base focus:outline-none focus:ring-0 overflow-y-auto scrollbar-hide"
-        style="scrollbar-width: none; -ms-overflow-style: none"
-        spellcheck="false"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        @input="handleInput"
-        @keydown="handleKeydown"
-      />
+        style="scrollbar-width: none; -ms-overflow-style: none" spellcheck="false" autocomplete="off" autocorrect="off"
+        autocapitalize="off" @input="handleInput" @keydown="handleKeydown" />
 
       <div class="flex gap-2 items-center min-w-0">
         <div class="flex gap-2 shrink-0">
-          <Select
-            v-model="selectedModelId"
-            :options="models"
-            option-label="name"
-            option-value="id"
-            filter
-            filter-placeholder="Search models..."
-            placeholder="Select model"
-            :pt="{
+          <Select v-model="selectedModelId" :options="models" option-label="name" option-value="id" filter
+            filter-placeholder="Search models..." placeholder="Select model" :pt="{
               root: {
                 class:
                   'inline-flex relative rounded-md bg-transparent transition-all duration-200 hover:border-secondary-400 cursor-pointer select-none',
@@ -376,21 +318,15 @@ onMounted(() => {
                   'block bg-transparent border-0 text-white/80 placeholder:text-surface-500 transition duration-200 focus:outline-none cursor-pointer overflow-hidden overflow-ellipsis whitespace-nowrap font-mono text-sm',
               },
               dropdownicon: { class: 'h-2 mb-0.5' },
-            }"
-          >
+            }">
             <template #value>
               <div
-                class="flex items-center gap-2 text-surface-400 text-sm transition-colors duration-200 hover:text-surface-200"
-              >
-                <i
-                  :class="
-                    getProviderIcon(
-                      models.find((m) => m.id === selectedModelId)?.provider ||
-                        'assistant',
-                    )
-                  "
-                  class="h-4 w-4"
-                />
+                class="flex items-center gap-2 text-surface-400 text-sm transition-colors duration-200 hover:text-surface-200">
+                <i :class="getProviderIcon(
+                  models.find((m) => m.id === selectedModelId)?.provider ||
+                  'assistant',
+                )
+                  " class="h-4 w-4" />
                 <span class="truncate">
                   {{
                     models.find((m) => m.id === selectedModelId)?.name ||
@@ -401,10 +337,7 @@ onMounted(() => {
             </template>
             <template #option="slotProps">
               <div class="flex items-center gap-2 text-surface-300 text-sm">
-                <i
-                  :class="getProviderIcon(slotProps.option.provider)"
-                  class="h-4 w-4"
-                />
+                <i :class="getProviderIcon(slotProps.option.provider)" class="h-4 w-4" />
                 <span class="truncate">{{ slotProps.option.name }}</span>
               </div>
             </template>
@@ -412,66 +345,40 @@ onMounted(() => {
         </div>
 
         <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">
-          <Button
-            v-tooltip="'Attach file'"
-            icon="fas fa-paperclip"
-            text
-            :pt="{
-              root: {
-                class:
-                  'bg-surface-700/50 text-surface-200 py-1.5 px-2 rounded-md hover:text-white transition-colors duration-200 h-8 w-8',
-              },
-            }"
-            @click="triggerFileInput"
-          />
-          <Button
-            v-if="!isLoading"
-            severity="tertiary"
-            icon="fas fa-arrow-circle-up"
-            :disabled="!modelValue.trim() && attachedFiles.length === 0"
-            :pt="{
+          <Button v-tooltip="'Attach file'" icon="fas fa-paperclip" text :pt="{
+            root: {
+              class:
+                'bg-surface-700/50 text-surface-200 py-1.5 px-2 rounded-md hover:text-white transition-colors duration-200 h-8 w-8',
+            },
+          }" @click="triggerFileInput" />
+          <Button v-if="!isLoading" severity="tertiary" icon="fas fa-arrow-circle-up"
+            :disabled="!modelValue.trim() && attachedFiles.length === 0" :pt="{
               root: {
                 class:
                   modelValue.trim() || attachedFiles.length > 0
                     ? 'bg-surface-700/50 text-surface-200 py-1.5 px-2 rounded-md hover:text-white transition-colors duration-200 h-8 w-8 cursor-pointer'
                     : 'bg-surface-700/20 text-surface-400 py-1.5 px-2 rounded-md h-8 w-8 cursor-not-allowed',
               },
-            }"
-            @click="emit('send')"
-          />
-          <Button
-            v-else
-            severity="danger"
-            icon="fas fa-square"
-            :pt="{
-              root: {
-                class:
-                  'bg-red-400/10 text-red-400 py-1 px-1.5 rounded-md hover:bg-red-400/20 transition-colors duration-200 h-8 w-8 cursor-pointer',
-              },
-              icon: {
-                class: 'text-sm',
-              },
-            }"
-            @click="emit('stop')"
-          />
+            }" @click="emit('send')" />
+          <Button v-else severity="danger" icon="fas fa-square" :pt="{
+            root: {
+              class:
+                'bg-red-400/10 text-red-400 py-1 px-1.5 rounded-md hover:bg-red-400/20 transition-colors duration-200 h-8 w-8 cursor-pointer',
+            },
+            icon: {
+              class: 'text-sm',
+            },
+          }" @click="emit('stop')" />
         </div>
       </div>
 
-      <div
-        v-if="isTyping"
-        class="flex items-center gap-2 text-sm text-surface-400"
-      >
+      <div v-if="isTyping" class="flex items-center gap-2 text-sm text-surface-400">
         <i class="fas fa-spinner fa-spin" /><span>AI is typing...</span>
       </div>
 
-      <input
-        ref="fileInputRef"
-        type="file"
-        multiple
-        accept="image/*,.txt,.md,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
-        class="hidden"
-        @change="handleFileSelect"
-      />
+      <input ref="fileInputRef" type="file" multiple
+        accept="image/*,.txt,.md,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml" class="hidden"
+        @change="handleFileSelect" />
     </div>
   </div>
 </template>

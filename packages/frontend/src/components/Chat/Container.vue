@@ -274,6 +274,38 @@ const handleClickMention = (mentionId: string) => {
   }
 };
 
+const resolveMessageContent = async (content: string): Promise<string> => {
+  const mentionRegex = /@\[([^\]]+)\]\(replay:([^)]+)\)/g;
+  const matches = [...content.matchAll(mentionRegex)];
+
+  if (matches.length === 0) return content;
+
+  let resolvedContent = content;
+
+  for (const match of matches) {
+    const [fullMatch, name, sessionId] = match;
+    try {
+      const sessionResponse = await sdk.graphql.replaySessionEntries({ id: sessionId });
+      const activeEntryId = sessionResponse?.replaySession?.activeEntry?.id;
+
+      if (activeEntryId) {
+        const entryResponse = await sdk.graphql.replayEntry({ id: activeEntryId });
+
+        const rawContent = entryResponse?.replayEntry?.raw;
+
+        if (rawContent) {
+          const replacement = `\n\n### Content of ${name} (Session ${sessionId}):\n\`\`\`http\n${rawContent}\n\`\`\`\n\n`;
+          resolvedContent = resolvedContent.replace(fullMatch, replacement);
+        }
+      }
+    } catch (error) {
+      console.error(`Failed to resolve session ${sessionId}:`, error);
+    }
+  }
+
+  return resolvedContent;
+};
+
 const sendMessage = async () => {
   if (isProjectChanging.value) {
     showToast(sdk, "Please wait for project change to complete", "error");
@@ -321,16 +353,26 @@ const sendMessage = async () => {
       maxMessages: settings.chatSettings?.maxMessages ?? 20,
     };
 
-    const backendMessages: ChatMessage[] = currentMessages.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-      images: msg.files
-        ?.filter((f) => f.type.startsWith("image/"))
-        .map((f) => f.content),
+    const backendMessages: ChatMessage[] = await Promise.all(currentMessages.map(async (msg) => {
+      let content = msg.content;
+      if (msg.role === 'user') {
+        content = await resolveMessageContent(msg.content);
+      }
+
+      return {
+        role: msg.role,
+        content: content,
+        images: msg.files
+          ?.filter((f) => f.type.startsWith("image/"))
+          .map((f) => f.content),
+      };
     }));
 
     currentStatus.value = `Sending to ${selectedModule.value}...`;
-    const result = await sdk.backend.chat(chatSettings, backendMessages);
+    const result = await sdk.backend.sendMessage({
+      settings: chatSettings,
+      messages: backendMessages
+    });
 
     if (result.success) {
       const assistantMessage: Message = {
@@ -410,71 +452,31 @@ onMounted(async () => {
 
 <template>
   <div class="h-full flex gap-1">
-    <History
-      v-if="showHistory"
-      :chat-history="chatHistory"
-      :current-chat-id="currentChatId"
-      :is-project-changing="isProjectChanging"
-      :editing-chat-id="editingChatId"
-      :editing-title="editingTitle"
-      @load-chat="loadChat"
-      @delete-chat="deleteChat"
-      @start-edit="startEditChat"
-      @save-edit="saveEditChat"
-      @cancel-edit="cancelEditChat"
-      @export-all="exportAllChats"
-      @update-edit-title="editingTitle = $event"
-    />
+    <History v-if="showHistory" :chat-history="chatHistory" :current-chat-id="currentChatId"
+      :is-project-changing="isProjectChanging" :editing-chat-id="editingChatId" :editing-title="editingTitle"
+      @load-chat="loadChat" @delete-chat="deleteChat" @start-edit="startEditChat" @save-edit="saveEditChat"
+      @cancel-edit="cancelEditChat" @export-all="exportAllChats" @update-edit-title="editingTitle = $event" />
 
     <div class="flex-1 flex flex-col gap-1 min-w-0">
-      <Header
-        :title="getCurrentChatTitle()"
-        :auto-save-enabled="autoSaveEnabled"
-        :show-history="showHistory"
-        @new-chat="createNewChat"
-        @export="exportCurrentChat"
-        @toggle-history="showHistory = !showHistory"
-      />
+      <Header :title="getCurrentChatTitle()" :auto-save-enabled="autoSaveEnabled" :show-history="showHistory"
+        @new-chat="createNewChat" @export="exportCurrentChat" @toggle-history="showHistory = !showHistory" />
 
-      <Messages
-        :messages="currentMessages"
-        :is-loading="isLoading"
-        :current-status="currentStatus"
-        :welcome-prompts="welcomePrompts"
-        @select-prompt="
+      <Messages :messages="currentMessages" :is-loading="isLoading" :current-status="currentStatus"
+        :welcome-prompts="welcomePrompts" @select-prompt="
           (p) => {
             currentMessage = p;
             sendMessage();
           }
-        "
-        @copy-message="copyMessage"
-        @delete-message="deleteMessage"
-        @click-mention="handleClickMention"
-        @open-image="openImageModal"
-      />
+        " @copy-message="copyMessage" @delete-message="deleteMessage" @click-mention="handleClickMention"
+        @open-image="openImageModal" />
 
-      <Input
-        v-model="currentMessage"
-        :attached-files="attachedFiles"
-        :is-loading="isLoading"
-        :is-typing="isTyping"
-        :selected-provider="selectedProvider"
-        :selected-model="selectedModel"
-        :selected-module="selectedModule"
-        @send="sendMessage"
-        @stop="stopGeneration"
-        @attach-files="handleAttachFiles"
-        @remove-file="removeFile"
-        @open-image="openImageModal"
-        @select-model="handleSelectModel"
-      />
+      <Input v-model="currentMessage" :attached-files="attachedFiles" :is-loading="isLoading" :is-typing="isTyping"
+        :selected-provider="selectedProvider" :selected-model="selectedModel" :selected-module="selectedModule"
+        @send="sendMessage" @stop="stopGeneration" @attach-files="handleAttachFiles" @remove-file="removeFile"
+        @open-image="openImageModal" @select-model="handleSelectModel" />
     </div>
 
-    <ImageViewer
-      v-model:visible="imageModal.show"
-      :images="imageModal.images"
-      :current-index="imageModal.currentIndex"
-      @navigate="navigateImage"
-    />
+    <ImageViewer v-model:visible="imageModal.show" :images="imageModal.images" :current-index="imageModal.currentIndex"
+      @navigate="navigateImage" />
   </div>
 </template>

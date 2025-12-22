@@ -6,14 +6,13 @@ import tailwindPrimeui from "tailwindcss-primeui";
 import tailwindCaido from "@caido/tailwindcss";
 import { resolve } from "path";
 import prefixwrap from "postcss-prefixwrap";
-import { fileURLToPath, URL } from 'node:url';
 
 const id = "chatio";
 export default defineConfig({
   id,
   name: "Chatio",
   description: "An AI-powered assistant for hackers and security professionals built for Caido",
-  version: "1.0.3",
+  version: "2.0.0",
   author: {
     name: "Amr Elsagaei",
     email: "info@amralsagaei.com",

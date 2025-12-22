@@ -1,4 +1,5 @@
 import type { ChatSession } from "../components/Chat/types";
+import type { ModelItem, ModelUserConfig } from "../stores/models";
 import type { FrontendSDK } from "../types";
 
 interface ChatSettings {
@@ -30,11 +31,13 @@ interface GlobalStorageData {
       systemPrompt: string;
       autoSave: boolean;
     };
+    modelConfigs?: Record<string, ModelUserConfig>;
+    customModels?: ModelItem[];
   };
   projects?: Record<string, ProjectStorageData>;
 }
 
-export class CaidoStorageService {
+class CaidoStorageService {
   private sdk: FrontendSDK;
   private cache: GlobalStorageData = {};
   private currentProjectId: string | undefined = undefined;
@@ -65,9 +68,16 @@ export class CaidoStorageService {
     this.sdk.backend.onEvent(
       "chatio:projectChange",
       (projectId: string | undefined) => {
+        const oldProjectId = this.currentProjectId;
         this.currentProjectId = projectId;
+        
         window.dispatchEvent(
-          new CustomEvent("chatio-project-changed", { detail: { projectId } }),
+          new CustomEvent("chatio-project-changed", { 
+            detail: { 
+              projectId,
+              oldProjectId 
+            } 
+          }),
         );
       },
     );
@@ -141,6 +151,16 @@ export class CaidoStorageService {
     await this.saveToStorage();
   }
 
+  async setChatHistoryForProject(projectId: string, history: ChatSession[]): Promise<void> {
+    await this.waitForInitialization();
+    const projectKey = projectId ?? "global";
+    if (this.cache.projects === undefined) this.cache.projects = {};
+    if (this.cache.projects[projectKey] === undefined)
+      this.cache.projects[projectKey] = {};
+    this.cache.projects[projectKey].chatHistory = history;
+    await this.saveToStorage();
+  }
+
   async getAppState(): Promise<AppState | undefined> {
     await this.waitForInitialization();
     return this.getProjectData().appState ?? undefined;
@@ -178,7 +198,35 @@ export class CaidoStorageService {
     if (this.cache.globalSettings !== undefined) {
       delete this.cache.globalSettings.providers;
       delete this.cache.globalSettings.chatSettings;
+      delete this.cache.globalSettings.modelConfigs;
+      delete this.cache.globalSettings.customModels;
     }
+    await this.saveToStorage();
+  }
+
+  async getModelConfigs(): Promise<Record<string, ModelUserConfig>> {
+    await this.waitForInitialization();
+    return this.cache.globalSettings?.modelConfigs ?? {};
+  }
+
+  async setModelConfigs(
+    configs: Record<string, ModelUserConfig>,
+  ): Promise<void> {
+    await this.waitForInitialization();
+    if (this.cache.globalSettings === undefined) this.cache.globalSettings = {};
+    this.cache.globalSettings.modelConfigs = configs;
+    await this.saveToStorage();
+  }
+
+  async getCustomModels(): Promise<ModelItem[]> {
+    await this.waitForInitialization();
+    return this.cache.globalSettings?.customModels ?? [];
+  }
+
+  async setCustomModels(models: ModelItem[]): Promise<void> {
+    await this.waitForInitialization();
+    if (this.cache.globalSettings === undefined) this.cache.globalSettings = {};
+    this.cache.globalSettings.customModels = models;
     await this.saveToStorage();
   }
 
@@ -188,8 +236,7 @@ export class CaidoStorageService {
   }
 
   private async saveToStorage(): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await this.sdk.storage.set(this.cache as any);
+    await this.sdk.storage.set(this.cache as unknown as never);
   }
 
   onStorageChange(callback: (data: GlobalStorageData) => void): void {
@@ -200,3 +247,11 @@ export class CaidoStorageService {
     });
   }
 }
+let storageInstance: CaidoStorageService | undefined = undefined;
+
+export const useStorage = (sdk: FrontendSDK) => {
+  if (!storageInstance) {
+    storageInstance = new CaidoStorageService(sdk);
+  }
+  return storageInstance;
+};

@@ -10,13 +10,14 @@ import { Messages } from "./Messages";
 import type { AttachedFile, ChatSession, Message } from "./types";
 import { generateChatId } from "./types";
 
+import { MAX_FILE_SIZE, MAX_TOTAL_FILES_SIZE } from "@/constants";
 import { useSDK } from "@/plugins/sdk";
-import { CaidoStorageService } from "@/services/storage";
+import { useStorage } from "@/services/storage";
 import { showToast } from "@/services/utils";
 import { createModel } from "@/utils/ai";
 
 const sdk = useSDK();
-const storageService = new CaidoStorageService(sdk);
+const storageService = useStorage(sdk);
 
 let abortController: AbortController | undefined = undefined;
 
@@ -61,11 +62,9 @@ const getCurrentChatTitle = (): string => {
 const loadChatHistory = async () => {
   try {
     const history = await storageService.getChatHistory();
-    if (history !== undefined && history.length > 0) {
-      chatHistory.splice(0, chatHistory.length, ...history);
-    }
+    chatHistory.splice(0, chatHistory.length, ...(history ?? []));
   } catch {
-    // Ignore error
+    chatHistory.splice(0, chatHistory.length);
   }
 };
 
@@ -221,7 +220,20 @@ const handleSelectModel = (
 };
 
 const handleAttachFiles = (files: FileList) => {
+  const currentTotalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
+  
   for (const file of Array.from(files)) {
+    if (file.size > MAX_FILE_SIZE) {
+      showToast(sdk, `File "${file.name}" exceeds 10MB limit`, "error");
+      continue;
+    }
+    
+    const newTotalSize = currentTotalSize + file.size;
+    if (newTotalSize > MAX_TOTAL_FILES_SIZE) {
+      showToast(sdk, `Total file size exceeds 50MB limit`, "error");
+      break;
+    }
+    
     const reader = new FileReader();
     reader.onload = () => {
       attachedFiles.push({
@@ -230,6 +242,9 @@ const handleAttachFiles = (files: FileList) => {
         type: file.type,
         size: file.size,
       });
+    };
+    reader.onerror = () => {
+      showToast(sdk, `Failed to read file "${file.name}"`, "error");
     };
     if (file.type.startsWith("image/")) reader.readAsDataURL(file);
     else reader.readAsText(file);
@@ -368,9 +383,13 @@ const sendMessage = async () => {
     const systemPrompt =
       settings?.chatSettings?.systemPrompt ??
       "You are a security-focused AI assistant helping with web application security testing in Caido.";
+    const maxMessages = settings?.chatSettings?.maxMessages ?? 25;
+
+    const messagesToSend = currentMessages.slice(0, -1);
+    const limitedMessages = messagesToSend.slice(-maxMessages);
 
     const coreMessages: CoreMessage[] = await Promise.all(
-      currentMessages.slice(0, -1).map(async (msg) => {
+      limitedMessages.map(async (msg) => {
         let content = msg.content;
         if (msg.role === "user") {
           content = await resolveMessageContent(msg.content);
@@ -476,11 +495,44 @@ onMounted(async () => {
   const settings = await storageService.getSettings();
   autoSaveEnabled.value = settings?.chatSettings?.autoSave ?? true;
 
-  const handleProjectChange = async () => {
+  const handleProjectChange = async (event: Event) => {
     isProjectChanging.value = true;
 
-    if (currentMessages.length > 0) {
-      await saveChatSession();
+    const customEvent = event as CustomEvent<{ projectId?: string; oldProjectId?: string }>;
+    const oldProjectId = customEvent?.detail?.oldProjectId;
+    
+    if (currentMessages.length > 0 || chatHistory.length > 0) {
+      if (oldProjectId !== undefined) {
+        const tempHistory = [...chatHistory];
+        if (currentMessages.length > 0) {
+          const title =
+            currentMessages[0]?.content.slice(0, 30) +
+            ((currentMessages[0]?.content.length ?? 0) > 30 ? "..." : "");
+          const existingIndex = tempHistory.findIndex(
+            (c) => c.id === currentChatId.value,
+          );
+          const session: ChatSession = {
+            id: currentChatId.value,
+            title:
+              existingIndex >= 0 ? (tempHistory[existingIndex]?.title ?? title) : title,
+            messages: [...currentMessages],
+            timestamp: new Date(),
+            messageCount: currentMessages.length,
+            selectedProvider: selectedProvider.value || undefined,
+            selectedModel: selectedModel.value || undefined,
+            selectedModule: selectedModule.value || undefined,
+          };
+          if (existingIndex >= 0) tempHistory.splice(existingIndex, 1);
+          tempHistory.unshift(session);
+        }
+        if (tempHistory.length > 0) {
+          await saveChatHistoryToProject(oldProjectId, tempHistory);
+        }
+      } else {
+        if (currentMessages.length > 0) {
+          await saveChatSession();
+        }
+      }
     }
 
     chatHistory.splice(0, chatHistory.length);
@@ -494,6 +546,10 @@ onMounted(async () => {
     await loadChatHistory();
     await loadLastActiveChat();
     isProjectChanging.value = false;
+  };
+
+  const saveChatHistoryToProject = async (projectId: string, history: ChatSession[]) => {
+    await storageService.setChatHistoryForProject(projectId, history);
   };
 
   const handleSettingsUpdate = async () => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const aboutInfo = {
   name: "Chatio",
-  version: "1.0.0",
+  version: "2.0.0",
   description:
     "Chatio is an AI-powered security assistant plugin for Caido, helping you analyze requests, review code, and get expert security guidance.",
   author: {

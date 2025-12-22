@@ -1,14 +1,9 @@
+import type { ChatSession } from "../components/Chat/types";
 import type { FrontendSDK } from "../types";
 
-export interface ChatSettings {
-  provider: string;
-  model: string;
-  apiKey: string;
-  baseUrl?: string;
+interface ChatSettings {
   systemPrompt?: string;
-  maxTokens?: number;
-  temperature?: number;
-  providers?: any;
+  providers?: Record<string, { apiKey?: string }>;
   chatSettings?: {
     maxMessages: number;
     systemPrompt: string;
@@ -16,40 +11,20 @@ export interface ChatSettings {
   };
 }
 
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  timestamp: Date;
-  files?: any[];
-  images?: string[];
-}
-
-export interface AppState {
+interface AppState {
   activeChatId: string;
   selectedProvider?: string;
   selectedModel?: string;
-  selectedModule?: string;
 }
 
-export interface ProjectStorageData {
-  settings?: ChatSettings;
-  chatHistory?: ChatMessage[];
+interface ProjectStorageData {
+  chatHistory?: ChatSession[];
   appState?: AppState;
-  theme?: "light" | "dark";
-  selectedModule?: any;
 }
 
-export interface GlobalStorageData {
+interface GlobalStorageData {
   globalSettings?: {
-    theme?: "light" | "dark";
-    preferences?: any;
-    providers?: Record<string, any>;
-    apiKeys?: Record<string, string>;
-    baseUrls?: Record<string, string>;
-    systemPrompt?: string;
-    maxTokens?: number;
-    temperature?: number;
+    providers?: Record<string, { apiKey?: string }>;
     chatSettings?: {
       maxMessages: number;
       systemPrompt: string;
@@ -62,7 +37,7 @@ export interface GlobalStorageData {
 export class CaidoStorageService {
   private sdk: FrontendSDK;
   private cache: GlobalStorageData = {};
-  private currentProjectId: string | null = null;
+  private currentProjectId: string | undefined = undefined;
   private isInitialized = false;
 
   constructor(sdk: FrontendSDK) {
@@ -73,23 +48,14 @@ export class CaidoStorageService {
 
   private async initializeCache() {
     try {
-      const data = (await this.sdk.storage.get()) as GlobalStorageData | null;
-      this.cache = data || { projects: {}, globalSettings: {} };
-
-      // Ensure required objects exist
-      if (!this.cache.projects) {
-        this.cache.projects = {};
-      }
-      if (!this.cache.globalSettings) {
+      const data = this.sdk.storage.get() as GlobalStorageData | undefined;
+      this.cache = data ?? { projects: {}, globalSettings: {} };
+      if (this.cache.projects === undefined) this.cache.projects = {};
+      if (this.cache.globalSettings === undefined)
         this.cache.globalSettings = {};
-      }
-
-      // Get current project ID
       this.currentProjectId = await this.sdk.backend.getCurrentProjectId();
-
       this.isInitialized = true;
-    } catch (error) {
-      console.error("[Storage] Failed to initialize Caido storage:", error);
+    } catch {
       this.cache = { projects: {}, globalSettings: {} };
       this.isInitialized = true;
     }
@@ -98,30 +64,24 @@ export class CaidoStorageService {
   private setupProjectChangeListener() {
     this.sdk.backend.onEvent(
       "chatio:projectChange",
-      async (projectId: string | null) => {
+      (projectId: string | undefined) => {
         this.currentProjectId = projectId;
-
         window.dispatchEvent(
-          new CustomEvent("chatio-project-changed", {
-            detail: { projectId },
-          }),
+          new CustomEvent("chatio-project-changed", { detail: { projectId } }),
         );
       },
     );
   }
 
   private getProjectKey(): string {
-    return this.currentProjectId || "global";
+    return this.currentProjectId ?? "global";
   }
 
   private getProjectData(): ProjectStorageData {
     const projectKey = this.getProjectKey();
-    if (!this.cache.projects) {
-      this.cache.projects = {};
-    }
-    if (!this.cache.projects[projectKey]) {
+    if (this.cache.projects === undefined) this.cache.projects = {};
+    if (this.cache.projects[projectKey] === undefined)
       this.cache.projects[projectKey] = {};
-    }
     return this.cache.projects[projectKey];
   }
 
@@ -129,133 +89,66 @@ export class CaidoStorageService {
     if (!this.isInitialized) {
       await new Promise((resolve) => {
         const check = () => {
-          if (this.isInitialized) {
-            resolve(undefined);
-          } else {
-            setTimeout(check, 10);
-          }
+          if (this.isInitialized) resolve(undefined);
+          else setTimeout(check, 10);
         };
         check();
       });
     }
   }
 
-  async getCurrentProjectId(): Promise<string | null> {
+  async getCurrentProjectId(): Promise<string | undefined> {
     await this.waitForInitialization();
     return this.currentProjectId;
   }
 
-  // GLOBAL SETTINGS (work across all projects)
-  async getSettings(): Promise<ChatSettings | null> {
+  async getSettings(): Promise<ChatSettings | undefined> {
     await this.waitForInitialization();
     const globalSettings = this.cache.globalSettings;
-    if (!globalSettings) return null;
-
-    // Convert global settings to ChatSettings format
-    const settings = {
-      provider: "", // No default provider
-      model: "", // No default model
-      apiKey: "",
-      baseUrl: "",
-      systemPrompt: globalSettings.systemPrompt || "",
-      maxTokens: globalSettings.maxTokens || 2048,
-      temperature: globalSettings.temperature || 0.7,
-      providers: globalSettings.providers || {},
-      chatSettings: globalSettings.chatSettings || {
-        maxMessages: 20,
-        systemPrompt: globalSettings.systemPrompt || "",
+    if (globalSettings === undefined) return undefined;
+    return {
+      providers: globalSettings.providers ?? {},
+      chatSettings: globalSettings.chatSettings ?? {
+        maxMessages: 25,
+        systemPrompt: "",
         autoSave: true,
       },
-    } as ChatSettings;
-
-    return settings;
+    };
   }
 
   async setSettings(settings: ChatSettings): Promise<void> {
     await this.waitForInitialization();
-    if (!this.cache.globalSettings) {
-      this.cache.globalSettings = {};
-    }
-
-    // Store settings globally
-    this.cache.globalSettings.providers = settings.providers || {};
-    this.cache.globalSettings.systemPrompt = settings.systemPrompt;
-    this.cache.globalSettings.maxTokens = settings.maxTokens;
-    this.cache.globalSettings.temperature = settings.temperature;
-
-    // Store chat settings if provided (for backward compatibility and additional fields)
-    if (settings.chatSettings) {
+    if (this.cache.globalSettings === undefined) this.cache.globalSettings = {};
+    this.cache.globalSettings.providers = settings.providers ?? {};
+    if (settings.chatSettings !== undefined) {
       this.cache.globalSettings.chatSettings = settings.chatSettings;
-      // Ensure systemPrompt is also copied from chatSettings if present
-      if (settings.chatSettings.systemPrompt) {
-        this.cache.globalSettings.systemPrompt =
-          settings.chatSettings.systemPrompt;
-      }
     }
-
     await this.saveToStorage();
   }
 
-  // PROJECT-SPECIFIC DATA (chat history, app state, selected module)
-  async getChatHistory(): Promise<ChatMessage[] | null> {
+  async getChatHistory(): Promise<ChatSession[] | undefined> {
     try {
       await this.waitForInitialization();
-      const projectData = this.getProjectData();
-      return projectData.chatHistory || [];
-    } catch (error) {
-      console.error("[Storage] Failed to load chat history:", error);
-      return null;
+      return this.getProjectData().chatHistory ?? [];
+    } catch {
+      return undefined;
     }
   }
 
-  async setChatHistory(history: ChatMessage[]): Promise<void> {
+  async setChatHistory(history: ChatSession[]): Promise<void> {
     await this.waitForInitialization();
-    const projectData = this.getProjectData();
-    projectData.chatHistory = history;
+    this.getProjectData().chatHistory = history;
     await this.saveToStorage();
   }
 
-  async getAppState(): Promise<AppState | null> {
+  async getAppState(): Promise<AppState | undefined> {
     await this.waitForInitialization();
-    const projectData = this.getProjectData();
-    return projectData.appState || null;
+    return this.getProjectData().appState ?? undefined;
   }
 
   async setAppState(state: AppState): Promise<void> {
     await this.waitForInitialization();
-    const projectData = this.getProjectData();
-    projectData.appState = state;
-    await this.saveToStorage();
-  }
-
-  async getTheme(): Promise<"light" | "dark"> {
-    await this.waitForInitialization();
-    // Theme is global, not project-specific
-    if (!this.cache.globalSettings) {
-      this.cache.globalSettings = {};
-    }
-    return this.cache.globalSettings.theme || "light";
-  }
-
-  async setTheme(theme: "light" | "dark"): Promise<void> {
-    await this.waitForInitialization();
-    if (!this.cache.globalSettings) {
-      this.cache.globalSettings = {};
-    }
-    this.cache.globalSettings.theme = theme;
-    await this.saveToStorage();
-  }
-
-  async getSelectedModule(): Promise<any | null> {
-    await this.waitForInitialization();
-    const projectData = this.getProjectData();
-    return projectData.selectedModule || null;
-  }
-
-  async setSelectedModule(module: any): Promise<void> {
-    await this.waitForInitialization();
-    const projectData = this.getProjectData();
-    projectData.selectedModule = module;
+    this.getProjectData().appState = state;
     await this.saveToStorage();
   }
 
@@ -267,15 +160,14 @@ export class CaidoStorageService {
 
   async clearChatHistory(): Promise<void> {
     await this.waitForInitialization();
-    const projectData = this.getProjectData();
-    delete projectData.chatHistory;
+    delete this.getProjectData().chatHistory;
     await this.saveToStorage();
   }
 
   async clearCurrentProjectData(): Promise<void> {
     await this.waitForInitialization();
     const projectKey = this.getProjectKey();
-    if (this.cache.projects && this.cache.projects[projectKey]) {
+    if (this.cache.projects?.[projectKey] !== undefined) {
       delete this.cache.projects[projectKey];
     }
     await this.saveToStorage();
@@ -283,35 +175,27 @@ export class CaidoStorageService {
 
   async clearSettings(): Promise<void> {
     await this.waitForInitialization();
-    if (this.cache.globalSettings) {
+    if (this.cache.globalSettings !== undefined) {
       delete this.cache.globalSettings.providers;
-      delete this.cache.globalSettings.systemPrompt;
-      delete this.cache.globalSettings.maxTokens;
-      delete this.cache.globalSettings.temperature;
+      delete this.cache.globalSettings.chatSettings;
     }
     await this.saveToStorage();
   }
 
-  // Get all projects that have data
   async getProjectList(): Promise<string[]> {
     await this.waitForInitialization();
-    return Object.keys(this.cache.projects || {});
+    return Object.keys(this.cache.projects ?? {});
   }
 
   private async saveToStorage(): Promise<void> {
-    try {
-      await this.sdk.storage.set(this.cache);
-    } catch (error) {
-      console.error("[Storage] Failed to save to Caido storage:", error);
-      throw error;
-    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await this.sdk.storage.set(this.cache as any);
   }
 
-  // Set up listener for storage changes from other instances
   onStorageChange(callback: (data: GlobalStorageData) => void): void {
     this.sdk.storage.onChange((newData) => {
       const data = newData as GlobalStorageData;
-      this.cache = data || { projects: {}, globalSettings: {} };
+      this.cache = data ?? { projects: {}, globalSettings: {} };
       callback(data);
     });
   }

@@ -3,15 +3,9 @@ import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import { computed } from "vue";
 
-interface ImageItem {
-  name: string;
-  content: string;
-  type: string;
-}
-
-const props = defineProps<{
+const { visible, images, currentIndex } = defineProps<{
   visible: boolean;
-  images: ImageItem[];
+  images: { name: string; content: string; type: string }[];
   currentIndex: number;
 }>();
 
@@ -20,9 +14,9 @@ const emit = defineEmits<{
   navigate: [direction: "prev" | "next"];
 }>();
 
-const currentImage = computed(() => props.images[props.currentIndex]);
-const hasPrev = computed(() => props.currentIndex > 0);
-const hasNext = computed(() => props.currentIndex < props.images.length - 1);
+const currentImage = computed(() => images[currentIndex]);
+const hasPrev = computed(() => currentIndex > 0);
+const hasNext = computed(() => currentIndex < images.length - 1);
 </script>
 
 <template>

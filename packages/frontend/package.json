@@ -1,12 +1,6 @@
 {
   "name": "chatio-frontend",
   "version": "1.0.0",
-  "description": "Frontend for Chatio - An AI-powered assistant for hackers and security professionals",
-  "author": {
-    "name": "Amr Elsagaei",
-    "email": "info@amralsagaei.com",
-    "url": "https://amralsagaei.com"
-  },
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -14,15 +8,15 @@
   "dependencies": {
     "@caido/primevue": "^0.1.13",
     "@caido/sdk-frontend": "^0.48.1",
-    "@types/dompurify": "^3.2.0",
-    "dompurify": "^3.2.6",
-    "highlight.js": "^11.11.1",
-    "marked": "^15.0.12",
+    "ai": "^5.0.116",
+    "dompurify": "^3.3.1",
+    "markdown-it": "^14.1.0",
     "primevue": "4.1.0",
     "vue": "^3.5.12"
   },
   "devDependencies": {
     "@types/node": "20.14.9",
-    "typescript": "5.5.4"
+    "typescript": "5.5.4",
+    "vue-tsc": "^3.2.1"
   }
 }

@@ -5,9 +5,11 @@ import ContextMenu from "primevue/contextmenu";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import type { AttachedFile, Message } from "../types";
-import { getProviderIcon } from "../types";
 
-const props = defineProps<{
+import { Markdown } from "@/components/Markdown";
+import { getModelById } from "@/stores/models";
+
+const { messages, isLoading, currentStatus, welcomePrompts } = defineProps<{
   messages: Message[];
   isLoading: boolean;
   currentStatus: string;
@@ -18,16 +20,14 @@ const emit = defineEmits<{
   selectPrompt: [prompt: string];
   copyMessage: [content: string];
   deleteMessage: [index: number];
-  openImage: [file: AttachedFile];
+  openImage: [file: AttachedFile, sourceFiles?: AttachedFile[]];
   clickMention: [mentionId: string];
 }>();
 
 const containerRef = ref<HTMLElement>();
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
 const selectedMessageIndex = ref(-1);
-const selectedMessage = computed(
-  () => props.messages[selectedMessageIndex.value],
-);
+const selectedMessage = computed(() => messages[selectedMessageIndex.value]);
 
 const scrollToBottom = async () => {
   await nextTick();
@@ -37,32 +37,27 @@ const scrollToBottom = async () => {
 };
 
 watch(
-  () => props.messages.length,
+  () => messages.length,
   () => scrollToBottom(),
 );
+
+watch(
+  () => messages.map((m) => m.content).join(""),
+  () => scrollToBottom(),
+);
+
 onMounted(() => scrollToBottom());
 
-const formatContent = (content: string): string => {
-  let formatted = content.replace(
-    /@\[([^\]]+)\]\(replay:([^)]+)\)/g,
-    '<a href="#" class="text-primary-400 hover:underline mention-link" data-mention-id="$2">@$1</a>',
-  );
+const getModelName = (modelId: string | undefined): string => {
+  if (modelId === undefined || modelId === "") return "";
+  const model = getModelById(modelId);
+  return model?.name ?? modelId.split("/").pop() ?? modelId;
+};
 
-  formatted = formatted
-    .replace(
-      /```(\w+)?\n([\s\S]*?)```/g,
-      '<pre class="bg-surface-900 p-3 rounded-lg overflow-x-auto my-2 text-xs"><code>$2</code></pre>',
-    )
-    .replace(
-      /`([^`]+)`/g,
-      '<code class="px-1 py-0.5 bg-surface-800 rounded text-xs">$1</code>',
-    )
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .split("\n")
-    .join("<br>");
-
-  return formatted;
+const getModelIcon = (modelId: string | undefined) => {
+  if (modelId === undefined || modelId === "") return undefined;
+  const model = getModelById(modelId);
+  return model?.icon;
 };
 
 const handleContentClick = (event: MouseEvent) => {
@@ -158,24 +153,27 @@ const showContextMenu = (event: MouseEvent, index: number) => {
               "
             >
               <i v-if="message.role === 'user'" class="fas fa-user text-xs" />
-              <i
-                v-else
-                :class="getProviderIcon(message.provider ?? 'assistant')"
-                class="text-xs"
+              <component
+                :is="getModelIcon(message.model)"
+                v-else-if="getModelIcon(message.model)"
+                class="w-4 h-4"
               />
+              <i v-else class="fas fa-robot text-xs" />
             </div>
 
             <div
-              class="max-w-[80%] rounded-lg p-3 cursor-context-menu"
-              :class="
-                message.role === 'user' ? 'bg-primary-600' : 'bg-surface-800'
-              "
+              :class="[
+                'rounded-lg p-3',
+                message.role === 'user'
+                  ? 'bg-primary-600 max-w-[90%]'
+                  : 'bg-surface-800 flex-1 min-w-0',
+              ]"
             >
               <div
                 v-if="message.role === 'assistant' && message.model"
                 class="text-xs text-surface-500 mb-1"
               >
-                {{ message.model }}
+                {{ getModelName(message.model) }}
               </div>
               <div
                 v-if="message.files && message.files.length > 0"
@@ -197,7 +195,8 @@ const showContextMenu = (event: MouseEvent, index: number) => {
                   <span
                     class="cursor-pointer hover:text-primary-400"
                     @click="
-                      file.type.startsWith('image/') && emit('openImage', file)
+                      file.type.startsWith('image/') &&
+                      emit('openImage', file, message.files)
                     "
                   >
                     {{ file.name }}
@@ -205,23 +204,29 @@ const showContextMenu = (event: MouseEvent, index: number) => {
                 </div>
               </div>
               <div
+                v-if="
+                  message.role === 'assistant' &&
+                  message.content === '' &&
+                  isLoading
+                "
+                class="flex items-center gap-2 text-surface-400"
+              >
+                <i class="fas fa-spinner fa-spin text-xs" />
+                <span class="text-sm">{{
+                  currentStatus || "Thinking..."
+                }}</span>
+              </div>
+              <Markdown
+                v-else-if="message.role === 'assistant'"
+                :content="message.content"
+                @click="handleContentClick"
+              />
+              <div
+                v-else
                 class="text-sm leading-relaxed"
                 @click="handleContentClick"
-                v-html="formatContent(message.content)"
-              />
-            </div>
-          </div>
-
-          <div v-if="isLoading" class="flex gap-3">
-            <div
-              class="w-8 h-8 rounded-full bg-surface-700 flex items-center justify-center flex-shrink-0"
-            >
-              <i class="fas fa-robot text-xs" />
-            </div>
-            <div class="bg-surface-800 rounded-lg p-3">
-              <div class="flex items-center gap-2 text-sm text-surface-400">
-                <i class="fas fa-spinner fa-spin" />
-                <span>{{ currentStatus || "Thinking..." }}</span>
+              >
+                {{ message.content }}
               </div>
             </div>
           </div>

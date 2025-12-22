@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { type CoreMessage, streamText } from "ai";
 import { onMounted, onUnmounted, reactive, ref } from "vue";
 
 import { ImageViewer } from "./Dialogs";
@@ -6,15 +7,18 @@ import { Header } from "./Header";
 import { History } from "./History";
 import { Input } from "./Input";
 import { Messages } from "./Messages";
-import type { AttachedFile, ChatMessage, ChatSession, Message } from "./types";
+import type { AttachedFile, ChatSession, Message } from "./types";
 import { generateChatId } from "./types";
 
 import { useSDK } from "@/plugins/sdk";
 import { CaidoStorageService } from "@/services/storage";
 import { showToast } from "@/services/utils";
+import { createModel } from "@/utils/ai";
 
 const sdk = useSDK();
 const storageService = new CaidoStorageService(sdk);
+
+let abortController: AbortController | undefined = undefined;
 
 const currentChatId = ref("default");
 const chatHistory = reactive<ChatSession[]>([]);
@@ -32,7 +36,6 @@ const showHistory = ref(true);
 const editingChatId = ref<string | undefined>(undefined);
 const editingTitle = ref("");
 
-const showModelSelector = ref(false);
 const selectedProvider = ref("");
 const selectedModel = ref("");
 const selectedModule = ref("");
@@ -58,11 +61,11 @@ const getCurrentChatTitle = (): string => {
 const loadChatHistory = async () => {
   try {
     const history = await storageService.getChatHistory();
-    if (history !== null && history.length > 0) {
+    if (history !== undefined && history.length > 0) {
       chatHistory.splice(0, chatHistory.length, ...history);
     }
-  } catch (error) {
-    console.error("Failed to load chat history:", error);
+  } catch {
+    // Ignore error
   }
 };
 
@@ -81,9 +84,12 @@ const loadChat = async (chatId: string) => {
     currentChatId.value = chat.id;
     currentMessages.splice(0, currentMessages.length, ...chat.messages);
 
-    if (chat.selectedProvider) selectedProvider.value = chat.selectedProvider;
-    if (chat.selectedModel) selectedModel.value = chat.selectedModel;
-    if (chat.selectedModule) selectedModule.value = chat.selectedModule;
+    if (chat.selectedProvider !== undefined)
+      selectedProvider.value = chat.selectedProvider;
+    if (chat.selectedModel !== undefined)
+      selectedModel.value = chat.selectedModel;
+    if (chat.selectedModule !== undefined)
+      selectedModule.value = chat.selectedModule;
     await saveAppState();
   }
 };
@@ -164,7 +170,6 @@ const saveAppState = async () => {
     activeChatId: currentChatId.value,
     selectedProvider: selectedProvider.value || undefined,
     selectedModel: selectedModel.value || undefined,
-    selectedModule: selectedModule.value || undefined,
   });
 };
 
@@ -190,7 +195,7 @@ const exportCurrentChat = () => {
   showToast(sdk, "Chat exported!", "success");
 };
 
-const exportAllChats = async () => {
+const exportAllChats = () => {
   if (chatHistory.length === 0) {
     showToast(sdk, "No chats to export", "error");
     return;
@@ -215,7 +220,7 @@ const handleSelectModel = (
   selectedModule.value = displayName;
 };
 
-const handleAttachFiles = async (files: FileList) => {
+const handleAttachFiles = (files: FileList) => {
   for (const file of Array.from(files)) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -235,11 +240,15 @@ const removeFile = (index: number) => {
   attachedFiles.splice(index, 1);
 };
 
-const openImageModal = (file: AttachedFile) => {
-  const images = attachedFiles
+const openImageModal = (file: AttachedFile, sourceFiles?: AttachedFile[]) => {
+  const filesToSearch = sourceFiles || attachedFiles;
+  const images = filesToSearch
     .filter((f) => f.type.startsWith("image/"))
     .map((f) => ({ name: f.name, content: f.content, type: f.type }));
   const idx = images.findIndex((i) => i.name === file.name);
+  if (images.length === 0) {
+    images.push({ name: file.name, content: file.content, type: file.type });
+  }
   imageModal.images = images;
   imageModal.currentIndex = idx >= 0 ? idx : 0;
   imageModal.show = true;
@@ -267,9 +276,8 @@ const deleteMessage = async (index: number) => {
 
 const handleClickMention = (mentionId: string) => {
   try {
-    sdk.navigation.goTo("/replay", { collectionId: mentionId });
-  } catch (error) {
-    console.error("Failed to navigate to Replay:", error);
+    sdk.navigation.goTo(`/replay/${mentionId}`);
+  } catch {
     showToast(sdk, "Could not open Replay session", "error");
   }
 };
@@ -284,16 +292,22 @@ const resolveMessageContent = async (content: string): Promise<string> => {
 
   for (const match of matches) {
     const [fullMatch, name, sessionId] = match;
+    if (sessionId === undefined) continue;
+
     try {
-      const sessionResponse = await sdk.graphql.replaySessionEntries({ id: sessionId });
+      const sessionResponse = await sdk.graphql.replaySessionEntries({
+        id: sessionId,
+      });
       const activeEntryId = sessionResponse?.replaySession?.activeEntry?.id;
 
-      if (activeEntryId) {
-        const entryResponse = await sdk.graphql.replayEntry({ id: activeEntryId });
+      if (activeEntryId !== undefined) {
+        const entryResponse = await sdk.graphql.replayEntry({
+          id: activeEntryId,
+        });
 
         const rawContent = entryResponse?.replayEntry?.raw;
 
-        if (rawContent) {
+        if (rawContent !== undefined) {
           const replacement = `\n\n### Content of ${name} (Session ${sessionId}):\n\`\`\`http\n${rawContent}\n\`\`\`\n\n`;
           resolvedContent = resolvedContent.replace(fullMatch, replacement);
         }
@@ -313,9 +327,8 @@ const sendMessage = async () => {
   }
   const trimmedMessage = currentMessage.value.trim();
   if (trimmedMessage === "" && attachedFiles.length === 0) return;
-  if (selectedProvider.value === "" || selectedModel.value === "") {
+  if (selectedModel.value === "") {
     showToast(sdk, "Please select an AI model first", "error");
-    showModelSelector.value = true;
     return;
   }
 
@@ -337,73 +350,121 @@ const sendMessage = async () => {
 
   isLoading.value = true;
   isTyping.value = true;
-  currentStatus.value = "Connecting...";
+  currentStatus.value = "Thinking...";
+
+  const assistantMessage: Message = {
+    id: (Date.now() + 1).toString(),
+    role: "assistant",
+    content: "",
+    timestamp: new Date(),
+    provider: selectedProvider.value,
+    model: selectedModel.value,
+  };
+  currentMessages.push(assistantMessage);
+  const assistantIndex = currentMessages.length - 1;
 
   try {
     const settings = await storageService.getSettings();
-    if (settings === null) throw new Error("No AI provider configured.");
+    const systemPrompt =
+      settings?.chatSettings?.systemPrompt ??
+      "You are a security-focused AI assistant helping with web application security testing in Caido.";
 
-    const providerConfig = settings.providers?.[selectedProvider.value];
-    const chatSettings = {
-      provider: selectedProvider.value,
-      model: selectedModel.value,
-      apiKey: providerConfig?.apiKey ?? "",
-      baseUrl: providerConfig?.baseUrl ?? providerConfig?.url ?? "",
-      systemPrompt: settings.chatSettings?.systemPrompt,
-      maxMessages: settings.chatSettings?.maxMessages ?? 20,
-    };
+    const coreMessages: CoreMessage[] = await Promise.all(
+      currentMessages.slice(0, -1).map(async (msg) => {
+        let content = msg.content;
+        if (msg.role === "user") {
+          content = await resolveMessageContent(msg.content);
+          if (msg.files && msg.files.length > 0) {
+            const fileContents = msg.files
+              .map((f) => {
+                if (f.type.startsWith("image/")) {
+                  return `[Image: ${f.name}]`;
+                }
+                return `\n--- ${f.name} ---\n${f.content}\n---`;
+              })
+              .join("\n");
+            content += "\n\nAttached files:" + fileContents;
+          }
+        }
+        return { role: msg.role, content } as CoreMessage;
+      }),
+    );
 
-    const backendMessages: ChatMessage[] = await Promise.all(currentMessages.map(async (msg) => {
-      let content = msg.content;
-      if (msg.role === 'user') {
-        content = await resolveMessageContent(msg.content);
+    abortController = new AbortController();
+    const model = createModel(sdk, selectedModel.value);
+
+    currentStatus.value = "Writing...";
+
+    const result = streamText({
+      model,
+      system: systemPrompt,
+      messages: coreMessages,
+      abortSignal: abortController.signal,
+    });
+
+    let hasContent = false;
+    for await (const chunk of result.textStream) {
+      currentMessages[assistantIndex]!.content += chunk;
+      hasContent = true;
+    }
+
+    if (!hasContent && currentMessages[assistantIndex]!.content === "") {
+      currentMessages.splice(assistantIndex, 1);
+    } else {
+      await saveChatSession();
+    }
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      if (currentMessages[assistantIndex]!.content !== "") {
+        currentMessages[assistantIndex]!.content +=
+          "\n\n*[Generation stopped]*";
+        await saveChatSession();
+      } else {
+        currentMessages.splice(assistantIndex, 1);
+      }
+    } else {
+      currentMessages.splice(assistantIndex, 1);
+      const errorMessage = (error as Error).message;
+
+      let userFriendlyError = "AI request failed";
+      if (
+        errorMessage.includes("API key") ||
+        errorMessage.includes("authentication")
+      ) {
+        userFriendlyError =
+          "Invalid API key. Configure your AI provider in Caido Settings → AI.";
+      } else if (
+        errorMessage.includes("billing") ||
+        errorMessage.includes("quota")
+      ) {
+        userFriendlyError =
+          "API billing issue. Check your account quota/billing status.";
+      } else if (errorMessage.includes("rate limit")) {
+        userFriendlyError = "Rate limit exceeded. Please wait and try again.";
+      } else if (
+        errorMessage.includes("network") ||
+        errorMessage.includes("fetch")
+      ) {
+        userFriendlyError = "Network error. Check your internet connection.";
+      } else {
+        userFriendlyError = `AI error: ${errorMessage}`;
       }
 
-      return {
-        role: msg.role,
-        content: content,
-        images: msg.files
-          ?.filter((f) => f.type.startsWith("image/"))
-          .map((f) => f.content),
-      };
-    }));
-
-    currentStatus.value = `Sending to ${selectedModule.value}...`;
-    const result = await sdk.backend.sendMessage({
-      settings: chatSettings,
-      messages: backendMessages
-    });
-
-    if (result.success) {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: result.message ?? "",
-        timestamp: new Date(),
-        provider: selectedProvider.value,
-        model: selectedModel.value,
-      };
-      currentMessages.push(assistantMessage);
-      await saveChatSession();
-    } else throw new Error(result.error ?? "Unknown error");
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : "Unknown error";
-    showToast(sdk, errorMsg, "error");
-    currentMessages.push({
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: `Error: ${errorMsg}`,
-      timestamp: new Date(),
-      status: "error",
-    });
+      showToast(sdk, userFriendlyError, "error");
+    }
   } finally {
     isLoading.value = false;
     isTyping.value = false;
     currentStatus.value = "";
+    abortController = undefined;
   }
 };
 
 const stopGeneration = () => {
+  if (abortController !== undefined) {
+    abortController.abort();
+    abortController = undefined;
+  }
   isLoading.value = false;
   isTyping.value = false;
   currentStatus.value = "";
@@ -468,7 +529,7 @@ onMounted(async () => {
             sendMessage();
           }
         " @copy-message="copyMessage" @delete-message="deleteMessage" @click-mention="handleClickMention"
-        @open-image="openImageModal" />
+        @open-image="(file, sourceFiles) => openImageModal(file, sourceFiles)" />
 
       <Input v-model="currentMessage" :attached-files="attachedFiles" :is-loading="isLoading" :is-typing="isTyping"
         :selected-provider="selectedProvider" :selected-model="selectedModel" :selected-module="selectedModule"

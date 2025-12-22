@@ -8,17 +8,18 @@ import { ChatSettings } from "./Chat";
 import { DataManagement } from "./Data";
 import { Providers } from "./Providers";
 
+import { DEFAULT_CHAT_SETTINGS } from "@/constants";
 import { useSDK } from "@/plugins/sdk";
 import { CaidoStorageService } from "@/services/storage";
 import { showToast } from "@/services/utils";
 
-type Tab = "Providers" | "Chat" | "Data";
+type Tab = "Chat" | "Providers" | "Data";
 
-const activeTab = ref<Tab>("Providers");
+const activeTab = ref<Tab>("Chat");
 
 const tabs = [
-  { label: "Providers", value: "Providers" },
   { label: "Chat", value: "Chat" },
+  { label: "Providers", value: "Providers" },
   { label: "Data", value: "Data" },
 ];
 
@@ -31,7 +32,7 @@ const component = computed(() => {
     case "Data":
       return DataManagement;
     default:
-      return Providers;
+      return ChatSettings;
   }
 });
 
@@ -39,66 +40,53 @@ const sdk = useSDK();
 const storageService = new CaidoStorageService(sdk);
 const saving = ref(false);
 
-const DEFAULT_SYSTEM_PROMPT = `You are a senior cybersecurity specialist with 20+ years of experience in penetration testing, red team operations, threat hunting, reverse engineering, vulnerability research, bug bounty, and offensive security tooling.
-
-Provide expert-level assistance for fully authorized security testing. Be concise but technically complete. Use step-by-step instructions, commands, and practical techniques. Include detection considerations and alternatives.`;
-
 const providers = reactive({
   openai: { apiKey: "" },
   anthropic: { apiKey: "" },
   google: { apiKey: "" },
   deepseek: { apiKey: "" },
-  local: { url: "http://localhost:11434", models: "", apiKey: "" },
 });
 
-const chatSettings = reactive({
-  maxMessages: 20,
-  systemPrompt: DEFAULT_SYSTEM_PROMPT,
-  autoSave: true,
-});
+const chatSettings = reactive({ ...DEFAULT_CHAT_SETTINGS });
 
 const loadSettings = async () => {
   try {
     const settings = await storageService.getSettings();
-    if (settings?.providers !== undefined) {
+    if (settings?.providers) {
       Object.keys(providers).forEach((key) => {
         const providerKey = key as keyof typeof providers;
-        if (settings.providers[key] !== undefined) {
+        if (settings.providers?.[key]) {
           Object.assign(providers[providerKey], settings.providers[key]);
         }
       });
     }
-    if (settings?.chatSettings !== undefined) {
-      Object.assign(chatSettings, settings.chatSettings);
-    } else if (settings?.systemPrompt !== undefined) {
-      chatSettings.systemPrompt = settings.systemPrompt;
+    if (settings?.chatSettings) {
+      if (settings.chatSettings.maxMessages) {
+        chatSettings.maxMessages = settings.chatSettings.maxMessages;
+      }
+      if (settings.chatSettings.systemPrompt) {
+        chatSettings.systemPrompt = settings.chatSettings.systemPrompt;
+      }
+      if (typeof settings.chatSettings.autoSave === "boolean") {
+        chatSettings.autoSave = settings.chatSettings.autoSave;
+      }
     }
-  } catch (error) {
-    console.error("Failed to load settings:", error);
+  } catch {
+    // Keep defaults
   }
 };
 
 const saveSettings = async () => {
   saving.value = true;
   try {
-    const formattedSettings = {
-      provider: "",
-      model: "",
-      apiKey: "",
-      baseUrl: "",
-      systemPrompt: chatSettings.systemPrompt,
-      maxTokens: chatSettings.maxMessages,
-      temperature: 0.7,
-      providers: providers,
+    await storageService.setSettings({
+      providers,
       chatSettings: {
         maxMessages: chatSettings.maxMessages,
         systemPrompt: chatSettings.systemPrompt,
         autoSave: chatSettings.autoSave,
       },
-      timestamp: new Date().toISOString(),
-    };
-
-    await storageService.setSettings(formattedSettings);
+    });
     showToast(sdk, "Settings saved!", "success");
     window.dispatchEvent(new CustomEvent("chatio-settings-updated"));
   } catch {
@@ -114,14 +102,7 @@ const clearAllData = async () => {
   Object.assign(providers.anthropic, { apiKey: "" });
   Object.assign(providers.google, { apiKey: "" });
   Object.assign(providers.deepseek, { apiKey: "" });
-  Object.assign(providers.local, {
-    url: "http://localhost:11434",
-    models: "",
-    apiKey: "",
-  });
-  chatSettings.maxMessages = 20;
-  chatSettings.systemPrompt = DEFAULT_SYSTEM_PROMPT;
-  chatSettings.autoSave = true;
+  Object.assign(chatSettings, DEFAULT_CHAT_SETTINGS);
   showToast(sdk, "All data cleared!", "success");
 };
 
@@ -132,9 +113,7 @@ const clearChatHistory = async () => {
 
 onMounted(() => {
   loadSettings();
-  const handleProjectChange = async () => {
-    await loadSettings();
-  };
+  const handleProjectChange = async () => await loadSettings();
   window.addEventListener("chatio-project-changed", handleProjectChange);
   onUnmounted(() => {
     window.removeEventListener("chatio-project-changed", handleProjectChange);
@@ -144,7 +123,6 @@ onMounted(() => {
 
 <template>
   <div class="h-full flex flex-col gap-1">
-    <!-- Header -->
     <Card
       class="h-fit"
       :pt="{
@@ -172,7 +150,6 @@ onMounted(() => {
       </template>
     </Card>
 
-    <!-- Tabs -->
     <Card
       class="h-fit"
       :pt="{
@@ -194,7 +171,6 @@ onMounted(() => {
       </template>
     </Card>
 
-    <!-- Content -->
     <Card
       class="h-full"
       :pt="{

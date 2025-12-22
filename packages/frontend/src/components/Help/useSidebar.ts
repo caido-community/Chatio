@@ -8,12 +8,11 @@ type Section = {
 export const useSidebar = () => {
   const sections: Section[] = [
     { id: "getting-started", title: "Getting Started" },
-    { id: "providers", title: "Configure Providers" },
-    { id: "settings", title: "Settings" },
+    { id: "configuration", title: "Configuration" },
     { id: "features", title: "Features" },
-    { id: "api-keys", title: "API Keys Setup" },
-    { id: "local-llm", title: "Local LLM (Ollama)" },
+    { id: "settings", title: "Settings" },
     { id: "troubleshooting", title: "Troubleshooting" },
+    { id: "about", title: "About" },
   ];
 
   const activeSection = ref<string>(sections[0]?.id ?? "");

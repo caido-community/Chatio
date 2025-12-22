@@ -4,31 +4,33 @@ import Select from "primevue/select";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import type { AttachedFile } from "../types";
-import { getProviderIcon } from "../types";
 
 import { useSDK } from "@/plugins/sdk";
 import { CaidoStorageService } from "@/services/storage";
+import {
+  allModels,
+  type ModelItem,
+  Provider,
+  providers,
+} from "@/stores/models";
 
 interface ReplaySession {
   id: string;
   name: string;
 }
 
-interface ModelOption {
-  id: string;
-  name: string;
-  provider: string;
-  model: string;
-}
-
-const props = defineProps<{
+const {
+  modelValue,
+  attachedFiles,
+  isLoading,
+  selectedProvider,
+  selectedModel,
+} = defineProps<{
   modelValue: string;
   attachedFiles: AttachedFile[];
   isLoading: boolean;
-  isTyping: boolean;
   selectedProvider: string;
   selectedModel: string;
-  selectedModule: string;
 }>();
 
 const emit = defineEmits<{
@@ -52,8 +54,9 @@ const replaySessions = ref<ReplaySession[]>([]);
 const mentionQuery = ref("");
 const selectedMentionIndex = ref(0);
 
-const models = ref<ModelOption[]>([]);
+const models = ref<ModelItem[]>([...allModels]);
 const selectedModelId = ref("");
+const localSelectedProvider = ref<Provider>(Provider.OpenRouter);
 
 const filteredSessions = computed(() => {
   if (mentionQuery.value === "") return replaySessions.value;
@@ -67,75 +70,105 @@ const loadReplaySessions = () => {
   try {
     const sessions = sdk.replay.getSessions();
     replaySessions.value = sessions;
-  } catch (error) {
-    console.error("Failed to load replay sessions:", error);
+  } catch {
+    // Silent fail
   }
 };
 
 const loadModels = async () => {
-  try {
-    const settings = await storageService.getSettings();
-    if (!settings?.providers) return;
+  const settings = await storageService.getAppState();
+  const savedProvider = settings?.selectedProvider;
+  const savedModel = settings?.selectedModel;
 
-    const modelsList: ModelOption[] = [];
+  if (
+    savedProvider !== undefined &&
+    Object.values(Provider as Record<string, string>).includes(savedProvider)
+  ) {
+    localSelectedProvider.value = savedProvider as Provider;
+  }
 
-    for (const [providerKey, providerConfig] of Object.entries(
-      settings.providers,
-    )) {
-      if (!providerConfig || typeof providerConfig !== "object") continue;
-      if (!("apiKey" in providerConfig) || !providerConfig.apiKey) continue;
+  models.value = allModels.filter(
+    (m) => m.provider === localSelectedProvider.value,
+  );
 
-      try {
-        const capabilities =
-          await sdk.backend.getProviderCapabilities(providerKey);
-        const providerModels = capabilities?.allModels || [];
-
-        for (const modelName of providerModels) {
-          const displayName = `${providerKey.charAt(0).toUpperCase() + providerKey.slice(1)} - ${modelName}`;
-          modelsList.push({
-            id: `${providerKey}:${modelName}`,
-            name: displayName,
-            provider: providerKey,
-            model: modelName as string,
-          });
-        }
-      } catch (error) {
-        console.error(`Failed to load models for ${providerKey}:`, error);
-      }
+  if (
+    savedModel !== undefined &&
+    models.value.find((m) => m.id === savedModel)
+  ) {
+    selectedModelId.value = savedModel;
+    const model = models.value.find((m) => m.id === savedModel);
+    if (model) {
+      emit("selectModel", model.provider, model.id, model.name);
     }
-
-    models.value = modelsList;
-
-    if (props.selectedProvider && props.selectedModel) {
-      selectedModelId.value = `${props.selectedProvider}:${props.selectedModel}`;
-    } else if (modelsList.length > 0 && modelsList[0]) {
-      selectedModelId.value = modelsList[0].id;
-      const firstModel = modelsList[0];
-      emit(
-        "selectModel",
-        firstModel.provider,
-        firstModel.model,
-        firstModel.name,
-      );
-    }
-  } catch (error) {
-    console.error("Failed to load models:", error);
+  } else if (selectedModel !== "") {
+    selectedModelId.value = selectedModel;
+  } else if (models.value.length > 0 && models.value[0]) {
+    selectedModelId.value = models.value[0].id;
+    emit(
+      "selectModel",
+      models.value[0].provider,
+      models.value[0].id,
+      models.value[0].name,
+    );
   }
 };
 
+const changeProvider = async (provider: Provider) => {
+  localSelectedProvider.value = provider;
+  models.value = allModels.filter((m) => m.provider === provider);
+
+  if (models.value.length > 0 && models.value[0]) {
+    selectedModelId.value = models.value[0].id;
+    emit("selectModel", provider, models.value[0].id, models.value[0].name);
+  }
+
+  await storageService.setAppState({
+    activeChatId: "",
+    selectedProvider: provider,
+    selectedModel: selectedModelId.value,
+  });
+};
+
 watch(
-  () => props.selectedProvider + props.selectedModel,
-  () => {
-    if (props.selectedProvider && props.selectedModel) {
-      selectedModelId.value = `${props.selectedProvider}:${props.selectedModel}`;
+  () => selectedModel,
+  (newModel) => {
+    if (newModel !== "" && newModel !== selectedModelId.value) {
+      selectedModelId.value = newModel;
+      const model = allModels.find((m) => m.id === newModel);
+      if (model && model.provider !== localSelectedProvider.value) {
+        localSelectedProvider.value = model.provider;
+        models.value = allModels.filter((m) => m.provider === model.provider);
+      }
     }
   },
+  { immediate: true },
 );
 
-watch(selectedModelId, (newId) => {
-  const model = models.value.find((m) => m.id === newId);
+watch(
+  () => selectedProvider,
+  (newProvider) => {
+    if (newProvider !== "" && newProvider !== localSelectedProvider.value) {
+      const provider = newProvider as Provider;
+      if (
+        Object.values(Provider as Record<string, string>).includes(provider)
+      ) {
+        localSelectedProvider.value = provider;
+        models.value = allModels.filter((m) => m.provider === provider);
+      }
+    }
+  },
+  { immediate: true },
+);
+
+watch(selectedModelId, async (newId) => {
+  const model = models.value.find((m: ModelItem) => m.id === newId);
   if (model) {
-    emit("selectModel", model.provider, model.model, model.name);
+    emit("selectModel", model.provider, model.id, model.name);
+    await storageService.setAppState({
+      activeChatId: "",
+      selectedProvider: localSelectedProvider.value,
+      selectedModel: newId,
+    });
   }
 });
 
@@ -161,7 +194,7 @@ const handleInput = (e: Event) => {
 };
 
 const insertMention = (session: ReplaySession) => {
-  const value = props.modelValue;
+  const value = modelValue;
   const lastAtIndex = value.lastIndexOf("@");
   if (lastAtIndex >= 0) {
     const newValue =
@@ -210,7 +243,7 @@ const triggerFileInput = () => fileInputRef.value?.click();
 
 const handleFileSelect = (e: Event) => {
   const input = e.target as HTMLInputElement;
-  if (input.files?.length) {
+  if (input.files !== null && input.files.length > 0) {
     emit("attachFiles", input.files);
     input.value = "";
   }
@@ -220,7 +253,10 @@ const handleFileSelect = (e: Event) => {
 const handleDrop = (e: DragEvent) => {
   e.preventDefault();
   isDragOver.value = false;
-  if (e.dataTransfer?.files?.length) {
+  if (
+    e.dataTransfer?.files?.length !== undefined &&
+    e.dataTransfer.files.length > 0
+  ) {
     emit("attachFiles", e.dataTransfer.files);
   }
   nextTick(() => textareaRef.value?.focus());
@@ -233,7 +269,7 @@ const formatFileSize = (bytes: number): string => {
 };
 
 watch(
-  () => props.modelValue,
+  () => modelValue,
   (val) => {
     if (!val.includes("@")) showMentions.value = false;
   },
@@ -247,68 +283,124 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bg-surface-900 border-t border-surface-700 p-4 relative" style="min-height: 180px">
-    <div class="flex flex-col gap-3 h-full" :class="{ 'ring-2 ring-primary-500 ring-opacity-50': isDragOver }"
-      @drop="handleDrop" @dragover.prevent="isDragOver = true" @dragleave="isDragOver = false">
-      <div v-show="showMentions"
-        class="absolute bottom-full left-0 mb-2 w-72 bg-surface-800 border border-surface-700 rounded-lg shadow-xl overflow-hidden z-50 flex flex-col">
+  <div
+    class="bg-surface-900 border-t border-surface-700 p-4 relative"
+    style="min-height: 180px"
+  >
+    <div
+      class="flex flex-col gap-3 h-full"
+      :class="{ 'ring-2 ring-primary-500 ring-opacity-50': isDragOver }"
+      @drop="handleDrop"
+      @dragover.prevent="isDragOver = true"
+      @dragleave="isDragOver = false"
+    >
+      <div
+        v-show="showMentions"
+        class="absolute bottom-full left-0 mb-2 w-72 bg-surface-800 border border-surface-700 rounded-lg shadow-xl overflow-hidden z-50 flex flex-col"
+      >
         <div
-          class="px-3 py-2 text-xs font-semibold text-surface-400 bg-surface-900/50 border-b border-surface-700 uppercase tracking-wider flex justify-between items-center">
+          class="px-3 py-2 text-xs font-semibold text-surface-400 bg-surface-900/50 border-b border-surface-700 uppercase tracking-wider flex justify-between items-center"
+        >
           <span>Select Session</span>
-          <span v-if="filteredSessions.length > 0" class="bg-surface-700 text-surface-300 px-1.5 rounded-sm">{{
-            filteredSessions.length }}</span>
+          <span
+            v-if="filteredSessions.length > 0"
+            class="bg-surface-700 text-surface-300 px-1.5 rounded-sm"
+            >{{ filteredSessions.length }}</span
+          >
         </div>
 
         <div class="max-h-60 overflow-y-auto custom-scrollbar p-1">
-          <div v-if="filteredSessions.length === 0" class="px-3 py-4 text-center text-sm text-surface-500">
+          <div
+            v-if="filteredSessions.length === 0"
+            class="px-3 py-4 text-center text-sm text-surface-500"
+          >
             No sessions found
           </div>
 
-          <div v-for="(session, index) in filteredSessions" :key="session.id"
+          <div
+            v-for="(session, index) in filteredSessions"
+            :key="session.id"
             class="px-2 py-2 cursor-pointer flex items-center gap-2 text-sm rounded-md transition-colors duration-150"
-            :class="index === selectedMentionIndex
+            :class="
+              index === selectedMentionIndex
                 ? 'bg-surface-700 text-white'
                 : 'text-surface-300 hover:bg-surface-700/50'
-              " @click="insertMention(session)" @mouseenter="selectedMentionIndex = index">
-            <i class="fas fa-play-circle text-xs" :class="index === selectedMentionIndex
-                ? 'text-primary-400'
-                : 'text-surface-500'
-              " />
+            "
+            @click="insertMention(session)"
+            @mouseenter="selectedMentionIndex = index"
+          >
+            <i
+              class="fas fa-play-circle text-xs"
+              :class="
+                index === selectedMentionIndex
+                  ? 'text-primary-400'
+                  : 'text-surface-500'
+              "
+            />
             <span class="truncate">{{ session.name }}</span>
           </div>
         </div>
       </div>
       <div v-if="attachedFiles.length > 0" class="flex flex-wrap gap-2">
-        <div v-for="(file, index) in attachedFiles" :key="index"
-          class="flex items-center gap-2 px-3 py-2 bg-surface-800 rounded-lg text-sm">
-          <i :class="file.type.startsWith('image/')
-              ? 'fas fa-image text-blue-400'
-              : 'fas fa-file text-surface-400'
-            " />
-          <span class="max-w-[120px] truncate cursor-pointer hover:text-primary-400"
-            @click="file.type.startsWith('image/') && emit('openImage', file)">
+        <div
+          v-for="(file, index) in attachedFiles"
+          :key="index"
+          class="flex items-center gap-2 px-3 py-2 bg-surface-800 rounded-lg text-sm"
+        >
+          <i
+            :class="
+              file.type.startsWith('image/')
+                ? 'fas fa-image text-blue-400'
+                : 'fas fa-file text-surface-400'
+            "
+          />
+          <span
+            class="max-w-[120px] truncate cursor-pointer hover:text-primary-400"
+            @click="file.type.startsWith('image/') && emit('openImage', file)"
+          >
             {{ file.name }}
           </span>
           <span class="text-xs text-surface-500">{{
             formatFileSize(file.size)
-            }}</span>
-          <Button icon="fas fa-times" text size="small" severity="secondary" @click="emit('removeFile', index)" />
+          }}</span>
+          <Button
+            icon="fas fa-times"
+            text
+            size="small"
+            severity="secondary"
+            @click="emit('removeFile', index)"
+          />
         </div>
       </div>
 
-      <textarea ref="textareaRef" :value="modelValue" placeholder="Message the agent..." :class="{
-        'opacity-60': isLoading,
-        'text-surface-200': !isLoading,
-        'text-surface-400': isLoading,
-      }"
+      <textarea
+        ref="textareaRef"
+        :value="modelValue"
+        placeholder="Message the agent..."
+        :class="{
+          'opacity-60': isLoading,
+          'text-surface-200': !isLoading,
+          'text-surface-400': isLoading,
+        }"
         class="border-0 outline-none font-mono resize-none bg-transparent flex-1 text-base focus:outline-none focus:ring-0 overflow-y-auto scrollbar-hide"
-        style="scrollbar-width: none; -ms-overflow-style: none" spellcheck="false" autocomplete="off" autocorrect="off"
-        autocapitalize="off" @input="handleInput" @keydown="handleKeydown" />
+        style="scrollbar-width: none; -ms-overflow-style: none"
+        spellcheck="false"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        @input="handleInput"
+        @keydown="handleKeydown"
+      />
 
       <div class="flex gap-2 items-center min-w-0">
         <div class="flex gap-2 shrink-0">
-          <Select v-model="selectedModelId" :options="models" option-label="name" option-value="id" filter
-            filter-placeholder="Search models..." placeholder="Select model" :pt="{
+          <Select
+            v-model="localSelectedProvider"
+            :options="providers"
+            option-label="name"
+            option-value="id"
+            placeholder="Provider"
+            :pt="{
               root: {
                 class:
                   'inline-flex relative rounded-md bg-transparent transition-all duration-200 hover:border-secondary-400 cursor-pointer select-none',
@@ -318,15 +410,60 @@ onMounted(() => {
                   'block bg-transparent border-0 text-white/80 placeholder:text-surface-500 transition duration-200 focus:outline-none cursor-pointer overflow-hidden overflow-ellipsis whitespace-nowrap font-mono text-sm',
               },
               dropdownicon: { class: 'h-2 mb-0.5' },
-            }">
+            }"
+            @change="changeProvider(localSelectedProvider)"
+          >
+            <template #value>
+              <div class="flex items-center gap-2 text-surface-400 text-sm">
+                <component
+                  :is="
+                    providers.find((p) => p.id === localSelectedProvider)?.icon
+                  "
+                  class="h-4 w-4"
+                />
+                <span>{{
+                  providers.find((p) => p.id === localSelectedProvider)?.name ??
+                  "Provider"
+                }}</span>
+              </div>
+            </template>
+            <template #option="slotProps">
+              <div class="flex items-center gap-2 text-surface-300 text-sm">
+                <component :is="slotProps.option.icon" class="h-4 w-4" />
+                <span>{{ slotProps.option.name }}</span>
+              </div>
+            </template>
+          </Select>
+          <Select
+            v-model="selectedModelId"
+            :options="models"
+            option-label="name"
+            option-value="id"
+            filter
+            filter-placeholder="Search models..."
+            placeholder="Select model"
+            :pt="{
+              root: {
+                class:
+                  'inline-flex relative rounded-md bg-transparent transition-all duration-200 hover:border-secondary-400 cursor-pointer select-none',
+              },
+              label: {
+                class:
+                  'block bg-transparent border-0 text-white/80 placeholder:text-surface-500 transition duration-200 focus:outline-none cursor-pointer overflow-hidden overflow-ellipsis whitespace-nowrap font-mono text-sm',
+              },
+              dropdownicon: { class: 'h-2 mb-0.5' },
+            }"
+          >
             <template #value>
               <div
-                class="flex items-center gap-2 text-surface-400 text-sm transition-colors duration-200 hover:text-surface-200">
-                <i :class="getProviderIcon(
-                  models.find((m) => m.id === selectedModelId)?.provider ||
-                  'assistant',
-                )
-                  " class="h-4 w-4" />
+                class="flex items-center gap-2 text-surface-400 text-sm transition-colors duration-200 hover:text-surface-200"
+              >
+                <component
+                  :is="models.find((m) => m.id === selectedModelId)?.icon"
+                  v-if="models.find((m) => m.id === selectedModelId)?.icon"
+                  class="h-4 w-4"
+                />
+                <div v-else class="h-3 w-3 rounded-sm bg-surface-500" />
                 <span class="truncate">
                   {{
                     models.find((m) => m.id === selectedModelId)?.name ||
@@ -337,7 +474,12 @@ onMounted(() => {
             </template>
             <template #option="slotProps">
               <div class="flex items-center gap-2 text-surface-300 text-sm">
-                <i :class="getProviderIcon(slotProps.option.provider)" class="h-4 w-4" />
+                <component
+                  :is="slotProps.option.icon"
+                  v-if="slotProps.option.icon"
+                  class="h-4 w-4"
+                />
+                <div v-else class="h-3 w-3 rounded-sm bg-surface-500" />
                 <span class="truncate">{{ slotProps.option.name }}</span>
               </div>
             </template>
@@ -345,40 +487,59 @@ onMounted(() => {
         </div>
 
         <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">
-          <Button v-tooltip="'Attach file'" icon="fas fa-paperclip" text :pt="{
-            root: {
-              class:
-                'bg-surface-700/50 text-surface-200 py-1.5 px-2 rounded-md hover:text-white transition-colors duration-200 h-8 w-8',
-            },
-          }" @click="triggerFileInput" />
-          <Button v-if="!isLoading" severity="tertiary" icon="fas fa-arrow-circle-up"
-            :disabled="!modelValue.trim() && attachedFiles.length === 0" :pt="{
+          <Button
+            v-tooltip="'Attach file'"
+            icon="fas fa-paperclip"
+            text
+            :pt="{
+              root: {
+                class:
+                  'bg-surface-700/50 text-surface-200 py-1.5 px-2 rounded-md hover:text-white transition-colors duration-200 h-8 w-8',
+              },
+            }"
+            @click="triggerFileInput"
+          />
+          <Button
+            v-if="!isLoading"
+            severity="tertiary"
+            icon="fas fa-arrow-circle-up"
+            :disabled="!modelValue.trim() && attachedFiles.length === 0"
+            :pt="{
               root: {
                 class:
                   modelValue.trim() || attachedFiles.length > 0
                     ? 'bg-surface-700/50 text-surface-200 py-1.5 px-2 rounded-md hover:text-white transition-colors duration-200 h-8 w-8 cursor-pointer'
                     : 'bg-surface-700/20 text-surface-400 py-1.5 px-2 rounded-md h-8 w-8 cursor-not-allowed',
               },
-            }" @click="emit('send')" />
-          <Button v-else severity="danger" icon="fas fa-square" :pt="{
-            root: {
-              class:
-                'bg-red-400/10 text-red-400 py-1 px-1.5 rounded-md hover:bg-red-400/20 transition-colors duration-200 h-8 w-8 cursor-pointer',
-            },
-            icon: {
-              class: 'text-sm',
-            },
-          }" @click="emit('stop')" />
+            }"
+            @click="emit('send')"
+          />
+          <Button
+            v-else
+            severity="danger"
+            icon="fas fa-square"
+            :pt="{
+              root: {
+                class:
+                  'bg-red-400/10 text-red-400 py-1 px-1.5 rounded-md hover:bg-red-400/20 transition-colors duration-200 h-8 w-8 cursor-pointer',
+              },
+              icon: {
+                class: 'text-sm',
+              },
+            }"
+            @click="emit('stop')"
+          />
         </div>
       </div>
 
-      <div v-if="isTyping" class="flex items-center gap-2 text-sm text-surface-400">
-        <i class="fas fa-spinner fa-spin" /><span>AI is typing...</span>
-      </div>
-
-      <input ref="fileInputRef" type="file" multiple
-        accept="image/*,.txt,.md,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml" class="hidden"
-        @change="handleFileSelect" />
+      <input
+        ref="fileInputRef"
+        type="file"
+        multiple
+        accept="image/*,.txt,.md,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml"
+        class="hidden"
+        @change="handleFileSelect"
+      />
     </div>
   </div>
 </template>

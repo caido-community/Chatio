@@ -8,20 +8,19 @@ import { useSDK } from "@/plugins/sdk";
 import { CaidoStorageService } from "@/services/storage";
 import { downloadFile, showToast } from "@/services/utils";
 
-const props = defineProps<{
-  providers: {
-    openai: { apiKey: string };
-    anthropic: { apiKey: string };
-    google: { apiKey: string };
-    deepseek: { apiKey: string };
-    local: { url: string; models: string; apiKey: string };
-  };
-  chatSettings: {
-    maxMessages: number;
-    systemPrompt: string;
-    autoSave: boolean;
-  };
-}>();
+const providers = defineModel<{
+  openai: { apiKey: string };
+  anthropic: { apiKey: string };
+  google: { apiKey: string };
+  deepseek: { apiKey: string };
+  local: { url: string; models: string; apiKey: string };
+}>("providers", { required: true });
+
+const chatSettings = defineModel<{
+  maxMessages: number;
+  systemPrompt: string;
+  autoSave: boolean;
+}>("chatSettings", { required: true });
 
 const emit = defineEmits<{
   clearAll: [];
@@ -37,9 +36,9 @@ const showClearAllDialog = ref(false);
 const exportChatHistory = async () => {
   try {
     const chatHistory = await storageService.getChatHistory();
-    if (chatHistory !== null && chatHistory.length > 0) {
+    if (chatHistory !== undefined && chatHistory.length > 0) {
       downloadFile(
-        JSON.stringify(chatHistory, null, 2),
+        JSON.stringify(chatHistory, undefined, 2),
         `chatio-history-${new Date().toISOString().split("T")[0]}.json`,
         "application/json",
       );
@@ -57,11 +56,11 @@ const exportSettings = () => {
     downloadFile(
       JSON.stringify(
         {
-          providers: props.providers,
-          chatSettings: props.chatSettings,
+          providers: providers.value,
+          chatSettings: chatSettings.value,
           version: "1.0.1",
         },
-        null,
+        undefined,
         2,
       ),
       `chatio-settings-${new Date().toISOString().split("T")[0]}.json`,
@@ -92,8 +91,8 @@ const importSettings = () => {
         showToast(sdk, "Invalid settings file", "error");
         return;
       }
-      Object.assign(props.providers, imported.providers);
-      Object.assign(props.chatSettings, imported.chatSettings);
+      Object.assign(providers.value, imported.providers);
+      Object.assign(chatSettings.value, imported.chatSettings);
       showToast(sdk, "Settings imported! Click Save to apply.", "success");
     } catch {
       showToast(sdk, "Invalid file", "error");
@@ -105,12 +104,12 @@ const importSettings = () => {
   document.body.removeChild(input);
 };
 
-const confirmDeleteChats = async () => {
+const confirmDeleteChats = () => {
   emit("clearHistory");
   showDeleteChatsDialog.value = false;
 };
 
-const confirmClearAll = async () => {
+const confirmClearAll = () => {
   emit("clearAll");
   showClearAllDialog.value = false;
 };
@@ -132,41 +131,43 @@ const confirmClearAll = async () => {
         </div>
 
         <div class="space-y-3">
-          <Button
-            label="Export Chat History"
-            icon="fas fa-download"
-            class="w-full"
-            severity="secondary"
-            @click="exportChatHistory"
-          />
-          <Button
-            label="Export Settings"
-            icon="fas fa-cog"
-            class="w-full"
-            severity="secondary"
-            @click="exportSettings"
-          />
-          <Button
-            label="Import Settings"
-            icon="fas fa-upload"
-            class="w-full"
-            severity="secondary"
-            @click="importSettings"
-          />
-          <Button
-            label="Delete All Chats"
-            icon="fas fa-comments"
-            class="w-full"
-            severity="warning"
-            @click="showDeleteChatsDialog = true"
-          />
-          <Button
-            label="Clear All Data"
-            icon="fas fa-trash"
-            class="w-full"
-            severity="danger"
-            @click="showClearAllDialog = true"
-          />
+          <div class="flex gap-2">
+            <Button
+              label="Export Chat History"
+              icon="fas fa-download"
+              class="flex-1"
+              severity="secondary"
+              @click="exportChatHistory"
+            />
+            <Button
+              label="Export Settings"
+              icon="fas fa-cog"
+              class="flex-1"
+              severity="secondary"
+              @click="exportSettings"
+            />
+            <Button
+              label="Import Settings"
+              icon="fas fa-upload"
+              class="flex-1"
+              severity="secondary"
+              @click="importSettings"
+            />
+          </div>
+          <div class="flex gap-2">
+            <Button
+              label="Delete All Chats"
+              icon="fas fa-comments"
+              class="flex-1 bg-primary text-white"
+              @click="showDeleteChatsDialog = true"
+            />
+            <Button
+              label="Clear All Data"
+              icon="fas fa-trash"
+              class="flex-1 bg-primary text-white"
+              @click="showClearAllDialog = true"
+            />
+          </div>
         </div>
 
         <div

@@ -2,7 +2,7 @@
 import Button from "primevue/button";
 import Card from "primevue/card";
 
-defineProps<{
+const { title, autoSaveEnabled, showHistory } = defineProps<{
   title: string;
   autoSaveEnabled: boolean;
   showHistory: boolean;

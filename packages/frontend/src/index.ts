@@ -1,11 +1,10 @@
-import "./styles/index.css";
-
 import { Classic } from "@caido/primevue";
 import PrimeVue from "primevue/config";
 import Tooltip from "primevue/tooltip";
 import { createApp } from "vue";
 
 import { SDKPlugin } from "./plugins/sdk";
+import "./styles/index.css";
 import type { FrontendSDK } from "./types";
 import App from "./views/App.vue";
 

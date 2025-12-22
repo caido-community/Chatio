@@ -4,13 +4,11 @@ import InputNumber from "primevue/inputnumber";
 import Textarea from "primevue/textarea";
 import ToggleSwitch from "primevue/toggleswitch";
 
-defineProps<{
-  chatSettings: {
-    maxMessages: number;
-    systemPrompt: string;
-    autoSave: boolean;
-  };
-}>();
+const chatSettings = defineModel<{
+  maxMessages: number;
+  systemPrompt: string;
+  autoSave: boolean;
+}>("chatSettings", { required: true });
 </script>
 
 <template>

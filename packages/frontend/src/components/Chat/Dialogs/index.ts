@@ -1,2 +1,2 @@
-export { default as ModelSelector } from "./ModelSelector.vue";
+// Export removed
 export { default as ImageViewer } from "./ImageViewer.vue";

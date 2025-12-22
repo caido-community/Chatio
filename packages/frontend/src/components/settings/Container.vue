@@ -6,20 +6,22 @@ import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 
 import { ChatSettings } from "./Chat";
 import { DataManagement } from "./Data";
+import { ModelsSettings } from "./Models";
 import { Providers } from "./Providers";
 
 import { DEFAULT_CHAT_SETTINGS } from "@/constants";
 import { useSDK } from "@/plugins/sdk";
-import { CaidoStorageService } from "@/services/storage";
+import { useStorage } from "@/services/storage";
 import { showToast } from "@/services/utils";
 
-type Tab = "Chat" | "Providers" | "Data";
+type Tab = "Chat" | "Providers" | "Models" | "Data";
 
 const activeTab = ref<Tab>("Chat");
 
 const tabs = [
   { label: "Chat", value: "Chat" },
   { label: "Providers", value: "Providers" },
+  { label: "Models", value: "Models" },
   { label: "Data", value: "Data" },
 ];
 
@@ -27,6 +29,8 @@ const component = computed(() => {
   switch (activeTab.value) {
     case "Providers":
       return Providers;
+    case "Models":
+      return ModelsSettings;
     case "Chat":
       return ChatSettings;
     case "Data":
@@ -37,7 +41,7 @@ const component = computed(() => {
 });
 
 const sdk = useSDK();
-const storageService = new CaidoStorageService(sdk);
+const storageService = useStorage(sdk);
 const saving = ref(false);
 
 const providers = reactive({
@@ -172,14 +176,19 @@ onMounted(() => {
     </Card>
 
     <Card
-      class="h-full"
+      class="flex-1 min-h-0"
       :pt="{
-        body: { class: 'h-full p-0 flex flex-col' },
-        content: { class: 'h-full flex flex-col' },
+        body: { class: 'h-full p-0 flex flex-col overflow-hidden' },
+        content: { class: 'h-full flex flex-col overflow-hidden' },
       }"
     >
       <template #content>
-        <div class="flex-1 min-h-0 overflow-auto">
+        <div
+          class="flex-1 min-h-0"
+          :class="[
+            activeTab === 'Models' ? 'overflow-hidden' : 'overflow-auto',
+          ]"
+        >
           <component
             :is="component"
             :providers="providers"

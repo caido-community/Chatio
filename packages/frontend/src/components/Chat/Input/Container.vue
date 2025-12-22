@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import Button from "primevue/button";
 import Select from "primevue/select";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import type { AttachedFile } from "../types";
 
 import { useSDK } from "@/plugins/sdk";
-import { CaidoStorageService } from "@/services/storage";
+import { useStorage } from "@/services/storage";
 import {
-  allModels,
+  defaultEnabledModels,
+  defaultModels,
   type ModelItem,
+  type ModelUserConfig,
   Provider,
   providers,
 } from "@/stores/models";
@@ -44,7 +46,7 @@ const emit = defineEmits<{
 }>();
 
 const sdk = useSDK();
-const storageService = new CaidoStorageService(sdk);
+const storageService = useStorage(sdk);
 const fileInputRef = ref<HTMLInputElement>();
 const textareaRef = ref<HTMLTextAreaElement>();
 const isDragOver = ref(false);
@@ -54,7 +56,9 @@ const replaySessions = ref<ReplaySession[]>([]);
 const mentionQuery = ref("");
 const selectedMentionIndex = ref(0);
 
-const models = ref<ModelItem[]>([...allModels]);
+const models = ref<ModelItem[]>([]);
+const modelConfigs = ref<Record<string, ModelUserConfig>>({});
+const customModels = ref<ModelItem[]>([]);
 const selectedModelId = ref("");
 const localSelectedProvider = ref<Provider>(Provider.OpenRouter);
 
@@ -80,6 +84,21 @@ const loadModels = async () => {
   const savedProvider = settings?.selectedProvider;
   const savedModel = settings?.selectedModel;
 
+  modelConfigs.value = await storageService.getModelConfigs();
+  customModels.value = await storageService.getCustomModels();
+
+  const allModels = [...defaultModels, ...customModels.value];
+
+  const getEnabledModels = (provider: Provider): ModelItem[] => {
+    return allModels.filter((m) => {
+      if (m.provider !== provider) return false;
+      const config = modelConfigs.value[m.id];
+      return config !== undefined
+        ? config.enabled
+        : defaultEnabledModels.has(m.id);
+    });
+  };
+
   if (
     savedProvider !== undefined &&
     Object.values(Provider as Record<string, string>).includes(savedProvider)
@@ -87,9 +106,7 @@ const loadModels = async () => {
     localSelectedProvider.value = savedProvider as Provider;
   }
 
-  models.value = allModels.filter(
-    (m) => m.provider === localSelectedProvider.value,
-  );
+  models.value = getEnabledModels(localSelectedProvider.value);
 
   if (
     savedModel !== undefined &&
@@ -102,6 +119,17 @@ const loadModels = async () => {
     }
   } else if (selectedModel !== "") {
     selectedModelId.value = selectedModel;
+    let model = models.value.find((m) => m.id === selectedModel);
+    if (!model) {
+      model = allModels.find((m) => m.id === selectedModel);
+      if (model && model.provider !== localSelectedProvider.value) {
+        localSelectedProvider.value = model.provider;
+        models.value = getEnabledModelsForProvider(model.provider);
+      }
+    }
+    if (model) {
+      emit("selectModel", model.provider, model.id, model.name);
+    }
   } else if (models.value.length > 0 && models.value[0]) {
     selectedModelId.value = models.value[0].id;
     emit(
@@ -113,9 +141,20 @@ const loadModels = async () => {
   }
 };
 
+const getEnabledModelsForProvider = (provider: Provider): ModelItem[] => {
+  const allModels = [...defaultModels, ...customModels.value];
+  return allModels.filter((m) => {
+    if (m.provider !== provider) return false;
+    const config = modelConfigs.value[m.id];
+    return config !== undefined
+      ? config.enabled
+      : defaultEnabledModels.has(m.id);
+  });
+};
+
 const changeProvider = async (provider: Provider) => {
   localSelectedProvider.value = provider;
-  models.value = allModels.filter((m) => m.provider === provider);
+  models.value = getEnabledModelsForProvider(provider);
 
   if (models.value.length > 0 && models.value[0]) {
     selectedModelId.value = models.value[0].id;
@@ -134,10 +173,11 @@ watch(
   (newModel) => {
     if (newModel !== "" && newModel !== selectedModelId.value) {
       selectedModelId.value = newModel;
+      const allModels = [...defaultModels, ...customModels.value];
       const model = allModels.find((m) => m.id === newModel);
       if (model && model.provider !== localSelectedProvider.value) {
         localSelectedProvider.value = model.provider;
-        models.value = allModels.filter((m) => m.provider === model.provider);
+        models.value = getEnabledModelsForProvider(model.provider);
       }
     }
   },
@@ -153,7 +193,7 @@ watch(
         Object.values(Provider as Record<string, string>).includes(provider)
       ) {
         localSelectedProvider.value = provider;
-        models.value = allModels.filter((m) => m.provider === provider);
+        models.value = getEnabledModelsForProvider(provider);
       }
     }
   },
@@ -279,6 +319,16 @@ onMounted(() => {
   loadReplaySessions();
   loadModels();
   textareaRef.value?.focus();
+
+  const handleProjectChange = async () => {
+    await new Promise((r) => setTimeout(r, 50));
+    await loadModels();
+  };
+  window.addEventListener("chatio-project-changed", handleProjectChange);
+
+  onUnmounted(() => {
+    window.removeEventListener("chatio-project-changed", handleProjectChange);
+  });
 });
 </script>
 

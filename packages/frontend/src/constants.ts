@@ -7,3 +7,6 @@ export const DEFAULT_CHAT_SETTINGS = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   autoSave: true,
 };
+
+export const MAX_FILE_SIZE = 10 * 1024 * 1024;
+export const MAX_TOTAL_FILES_SIZE = 50 * 1024 * 1024;

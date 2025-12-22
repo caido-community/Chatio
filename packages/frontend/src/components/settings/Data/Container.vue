@@ -5,7 +5,7 @@ import Dialog from "primevue/dialog";
 import { ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
-import { CaidoStorageService } from "@/services/storage";
+import { useStorage } from "@/services/storage";
 import { downloadFile, showToast } from "@/services/utils";
 
 const providers = defineModel<{
@@ -28,7 +28,7 @@ const emit = defineEmits<{
 }>();
 
 const sdk = useSDK();
-const storageService = new CaidoStorageService(sdk);
+const storageService = useStorage(sdk);
 
 const showDeleteChatsDialog = ref(false);
 const showClearAllDialog = ref(false);
@@ -51,14 +51,19 @@ const exportChatHistory = async () => {
   }
 };
 
-const exportSettings = () => {
+const exportSettings = async () => {
   try {
+    const modelConfigs = await storageService.getModelConfigs();
+    const customModels = await storageService.getCustomModels();
+
     downloadFile(
       JSON.stringify(
         {
           providers: providers.value,
           chatSettings: chatSettings.value,
-          version: "1.0.1",
+          modelConfigs,
+          customModels,
+          version: "2.0.0",
         },
         undefined,
         2,
@@ -93,7 +98,17 @@ const importSettings = () => {
       }
       Object.assign(providers.value, imported.providers);
       Object.assign(chatSettings.value, imported.chatSettings);
+
+      if (imported.modelConfigs !== undefined) {
+        await storageService.setModelConfigs(imported.modelConfigs);
+      }
+      if (imported.customModels !== undefined) {
+        await storageService.setCustomModels(imported.customModels);
+      }
+
       showToast(sdk, "Settings imported! Click Save to apply.", "success");
+
+      window.dispatchEvent(new CustomEvent("chatio-settings-updated"));
     } catch {
       showToast(sdk, "Invalid file", "error");
     }
@@ -175,8 +190,7 @@ const confirmClearAll = () => {
         >
           <i class="fas fa-info-circle mt-0.5" />
           <span>
-            "Delete Chats" removes history only. "Clear All" removes everything
-            including API keys.
+            "Delete All Chats" removes chat history for the current project only. "Clear All Data" removes all data across all projects including settings and API keys.
           </span>
         </div>
       </div>
@@ -194,10 +208,10 @@ const confirmClearAll = () => {
       <i class="fas fa-exclamation-triangle text-amber-400 text-xl mt-1" />
       <div>
         <p class="text-surface-300">
-          Are you sure you want to delete all chat history?
+          Are you sure you want to delete all chat history for the current project?
         </p>
         <p class="text-sm text-surface-500 mt-2">
-          This action cannot be undone.
+          This will only delete chats for this project. Other projects will not be affected. This action cannot be undone.
         </p>
       </div>
     </div>
@@ -223,8 +237,7 @@ const confirmClearAll = () => {
       <div>
         <p class="text-surface-300">Are you sure you want to clear ALL data?</p>
         <p class="text-sm text-surface-500 mt-2">
-          This will remove all settings, API keys, and chat history. This action
-          cannot be undone.
+          This will remove all settings, API keys, and chat history across ALL projects. This action cannot be undone.
         </p>
       </div>
     </div>

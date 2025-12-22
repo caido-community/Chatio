@@ -22,6 +22,13 @@ export interface ModelItem {
   id: string;
   provider: Provider;
   icon?: Component;
+  isCustom?: boolean;
+  isReasoningModel?: boolean;
+}
+
+export interface ModelUserConfig {
+  id: string;
+  enabled: boolean;
 }
 
 const openRouterModels: ModelItem[] = [
@@ -30,42 +37,49 @@ const openRouterModels: ModelItem[] = [
     id: "openrouter/anthropic/claude-sonnet-4.5",
     provider: Provider.OpenRouter,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Sonnet 4",
     id: "openrouter/anthropic/claude-sonnet-4",
     provider: Provider.OpenRouter,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Sonnet 3.7",
     id: "openrouter/anthropic/claude-3.7-sonnet",
     provider: Provider.OpenRouter,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Opus 4",
     id: "openrouter/anthropic/claude-opus-4",
     provider: Provider.OpenRouter,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "GPT-5.1",
     id: "openrouter/openai/gpt-5.1",
     provider: Provider.OpenRouter,
     icon: OpenAIIcon,
+    isReasoningModel: true,
   },
   {
     name: "GPT-5",
     id: "openrouter/openai/gpt-5",
     provider: Provider.OpenRouter,
     icon: OpenAIIcon,
+    isReasoningModel: true,
   },
   {
     name: "GPT-5 mini",
     id: "openrouter/openai/gpt-5-mini",
     provider: Provider.OpenRouter,
     icon: OpenAIIcon,
+    isReasoningModel: true,
   },
   {
     name: "GPT-4.1",
@@ -78,24 +92,28 @@ const openRouterModels: ModelItem[] = [
     id: "openrouter/google/gemini-3-pro-preview",
     provider: Provider.OpenRouter,
     icon: GoogleIcon,
+    isReasoningModel: true,
   },
   {
     name: "Gemini 2.5 Pro",
     id: "openrouter/google/gemini-2.5-pro",
     provider: Provider.OpenRouter,
     icon: GoogleIcon,
+    isReasoningModel: true,
   },
   {
     name: "Gemini 2.5 Flash",
     id: "openrouter/google/gemini-2.5-flash",
     provider: Provider.OpenRouter,
     icon: GoogleIcon,
+    isReasoningModel: true,
   },
   {
     name: "Grok 4 Fast",
     id: "openrouter/x-ai/grok-4-fast",
     provider: Provider.OpenRouter,
     icon: XAIIcon,
+    isReasoningModel: true,
   },
   {
     name: "Grok Code",
@@ -108,6 +126,7 @@ const openRouterModels: ModelItem[] = [
     id: "openrouter/deepseek/deepseek-r1-0528",
     provider: Provider.OpenRouter,
     icon: DeepseekIcon,
+    isReasoningModel: true,
   },
   {
     name: "DeepSeek V3",
@@ -120,6 +139,7 @@ const openRouterModels: ModelItem[] = [
     id: "openrouter/moonshotai/kimi-k2-thinking",
     provider: Provider.OpenRouter,
     icon: DeepseekIcon,
+    isReasoningModel: true,
   },
   {
     name: "Qwen3 Coder",
@@ -147,6 +167,7 @@ const openAIModels: ModelItem[] = [
     id: "openai/gpt-5.1",
     provider: Provider.OpenAI,
     icon: OpenAIIcon,
+    isReasoningModel: true,
   },
 ];
 
@@ -156,30 +177,35 @@ const anthropicModels: ModelItem[] = [
     id: "anthropic/claude-sonnet-4-5-20250929",
     provider: Provider.Anthropic,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Sonnet 4",
     id: "anthropic/claude-sonnet-4-20250514",
     provider: Provider.Anthropic,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Sonnet 3.7",
     id: "anthropic/claude-3-7-sonnet-20250219",
     provider: Provider.Anthropic,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Opus 4.1",
     id: "anthropic/claude-opus-4-1-20250805",
     provider: Provider.Anthropic,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Opus 4",
     id: "anthropic/claude-opus-4-20250514",
     provider: Provider.Anthropic,
     icon: AnthropicIcon,
+    isReasoningModel: true,
   },
   {
     name: "Haiku 3.5",
@@ -195,30 +221,37 @@ const googleModels: ModelItem[] = [
     id: "google/gemini-3-pro-preview",
     provider: Provider.Google,
     icon: GoogleIcon,
+    isReasoningModel: true,
   },
   {
     name: "Gemini 2.5 Pro",
     id: "google/gemini-2.5-pro",
     provider: Provider.Google,
     icon: GoogleIcon,
+    isReasoningModel: true,
   },
   {
     name: "Gemini 2.5 Flash",
     id: "google/gemini-2.5-flash",
     provider: Provider.Google,
     icon: GoogleIcon,
+    isReasoningModel: true,
   },
 ];
 
-export const allModels: ModelItem[] = [
+export const defaultModels: ModelItem[] = [
   ...openRouterModels,
   ...openAIModels,
   ...anthropicModels,
   ...googleModels,
 ];
 
+export const defaultEnabledModels = new Set<string>(
+  defaultModels.map((m) => m.id),
+);
+
 export function getModelById(id: string): ModelItem | undefined {
-  return allModels.find((m) => m.id === id);
+  return defaultModels.find((m) => m.id === id);
 }
 
 export const providers = [

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { type CoreMessage, streamText } from "ai";
+import { streamText } from "ai";
 import { onMounted, onUnmounted, reactive, ref } from "vue";
 
 import { ImageViewer } from "./Dialogs";
@@ -221,19 +221,19 @@ const handleSelectModel = (
 
 const handleAttachFiles = (files: FileList) => {
   const currentTotalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
-  
+
   for (const file of Array.from(files)) {
     if (file.size > MAX_FILE_SIZE) {
       showToast(sdk, `File "${file.name}" exceeds 10MB limit`, "error");
       continue;
     }
-    
+
     const newTotalSize = currentTotalSize + file.size;
     if (newTotalSize > MAX_TOTAL_FILES_SIZE) {
       showToast(sdk, `Total file size exceeds 50MB limit`, "error");
       break;
     }
-    
+
     const reader = new FileReader();
     reader.onload = () => {
       attachedFiles.push({
@@ -388,7 +388,8 @@ const sendMessage = async () => {
     const messagesToSend = currentMessages.slice(0, -1);
     const limitedMessages = messagesToSend.slice(-maxMessages);
 
-    const coreMessages: CoreMessage[] = await Promise.all(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const coreMessages: any[] = await Promise.all(
       limitedMessages.map(async (msg) => {
         let content = msg.content;
         if (msg.role === "user") {
@@ -405,14 +406,15 @@ const sendMessage = async () => {
             content += "\n\nAttached files:" + fileContents;
           }
         }
-        return { role: msg.role, content } as CoreMessage;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return { role: msg.role, content } as any;
       }),
     );
 
     abortController = new AbortController();
     const model = createModel(sdk, selectedModel.value);
 
-    currentStatus.value = "Writing...";
+    currentStatus.value = "Thinking...";
 
     const result = streamText({
       model,
@@ -422,9 +424,41 @@ const sendMessage = async () => {
     });
 
     let hasContent = false;
-    for await (const chunk of result.textStream) {
-      currentMessages[assistantIndex]!.content += chunk;
-      hasContent = true;
+    let reasoningContent = "";
+    let isReasoning = false;
+    let reasoningStartTime: number | undefined;
+
+    for await (const part of result.fullStream) {
+      if (part.type === "reasoning-delta") {
+        if (!isReasoning) {
+          isReasoning = true;
+          reasoningStartTime = Date.now();
+          currentStatus.value = "Reasoning...";
+        }
+        reasoningContent += part.text;
+        currentMessages[assistantIndex]!.reasoning = reasoningContent;
+
+        if (reasoningStartTime !== undefined) {
+          const durationMs = Date.now() - reasoningStartTime;
+          currentMessages[assistantIndex]!.thinkingDuration = Math.round(
+            durationMs / 1000,
+          );
+        }
+      } else if (part.type === "text-delta") {
+        if (isReasoning) {
+          isReasoning = false;
+          currentStatus.value = "Writing...";
+
+          if (reasoningStartTime !== undefined) {
+            const durationMs = Date.now() - reasoningStartTime;
+            currentMessages[assistantIndex]!.thinkingDuration = Math.round(
+              durationMs / 1000,
+            );
+          }
+        }
+        currentMessages[assistantIndex]!.content += part.text;
+        hasContent = true;
+      }
     }
 
     if (!hasContent && currentMessages[assistantIndex]!.content === "") {
@@ -498,9 +532,12 @@ onMounted(async () => {
   const handleProjectChange = async (event: Event) => {
     isProjectChanging.value = true;
 
-    const customEvent = event as CustomEvent<{ projectId?: string; oldProjectId?: string }>;
+    const customEvent = event as CustomEvent<{
+      projectId?: string;
+      oldProjectId?: string;
+    }>;
     const oldProjectId = customEvent?.detail?.oldProjectId;
-    
+
     if (currentMessages.length > 0 || chatHistory.length > 0) {
       if (oldProjectId !== undefined) {
         const tempHistory = [...chatHistory];
@@ -514,7 +551,9 @@ onMounted(async () => {
           const session: ChatSession = {
             id: currentChatId.value,
             title:
-              existingIndex >= 0 ? (tempHistory[existingIndex]?.title ?? title) : title,
+              existingIndex >= 0
+                ? (tempHistory[existingIndex]?.title ?? title)
+                : title,
             messages: [...currentMessages],
             timestamp: new Date(),
             messageCount: currentMessages.length,
@@ -548,7 +587,10 @@ onMounted(async () => {
     isProjectChanging.value = false;
   };
 
-  const saveChatHistoryToProject = async (projectId: string, history: ChatSession[]) => {
+  const saveChatHistoryToProject = async (
+    projectId: string,
+    history: ChatSession[],
+  ) => {
     await storageService.setChatHistoryForProject(projectId, history);
   };
 
@@ -569,31 +611,71 @@ onMounted(async () => {
 
 <template>
   <div class="h-full flex gap-1">
-    <History v-if="showHistory" :chat-history="chatHistory" :current-chat-id="currentChatId"
-      :is-project-changing="isProjectChanging" :editing-chat-id="editingChatId" :editing-title="editingTitle"
-      @load-chat="loadChat" @delete-chat="deleteChat" @start-edit="startEditChat" @save-edit="saveEditChat"
-      @cancel-edit="cancelEditChat" @export-all="exportAllChats" @update-edit-title="editingTitle = $event" />
+    <History
+      v-if="showHistory"
+      :chat-history="chatHistory"
+      :current-chat-id="currentChatId"
+      :is-project-changing="isProjectChanging"
+      :editing-chat-id="editingChatId"
+      :editing-title="editingTitle"
+      @load-chat="loadChat"
+      @delete-chat="deleteChat"
+      @start-edit="startEditChat"
+      @save-edit="saveEditChat"
+      @cancel-edit="cancelEditChat"
+      @export-all="exportAllChats"
+      @update-edit-title="editingTitle = $event"
+    />
 
     <div class="flex-1 flex flex-col gap-1 min-w-0">
-      <Header :title="getCurrentChatTitle()" :auto-save-enabled="autoSaveEnabled" :show-history="showHistory"
-        @new-chat="createNewChat" @export="exportCurrentChat" @toggle-history="showHistory = !showHistory" />
+      <Header
+        :title="getCurrentChatTitle()"
+        :auto-save-enabled="autoSaveEnabled"
+        :show-history="showHistory"
+        @new-chat="createNewChat"
+        @export="exportCurrentChat"
+        @toggle-history="showHistory = !showHistory"
+      />
 
-      <Messages :messages="currentMessages" :is-loading="isLoading" :current-status="currentStatus"
-        :welcome-prompts="welcomePrompts" @select-prompt="
+      <Messages
+        :messages="currentMessages"
+        :is-loading="isLoading"
+        :current-status="currentStatus"
+        :welcome-prompts="welcomePrompts"
+        @select-prompt="
           (p) => {
             currentMessage = p;
             sendMessage();
           }
-        " @copy-message="copyMessage" @delete-message="deleteMessage" @click-mention="handleClickMention"
-        @open-image="(file, sourceFiles) => openImageModal(file, sourceFiles)" />
+        "
+        @copy-message="copyMessage"
+        @delete-message="deleteMessage"
+        @click-mention="handleClickMention"
+        @open-image="(file, sourceFiles) => openImageModal(file, sourceFiles)"
+      />
 
-      <Input v-model="currentMessage" :attached-files="attachedFiles" :is-loading="isLoading" :is-typing="isTyping"
-        :selected-provider="selectedProvider" :selected-model="selectedModel" :selected-module="selectedModule"
-        @send="sendMessage" @stop="stopGeneration" @attach-files="handleAttachFiles" @remove-file="removeFile"
-        @open-image="openImageModal" @select-model="handleSelectModel" />
+      <Input
+        v-model="currentMessage"
+        :attached-files="attachedFiles"
+        :is-loading="isLoading"
+        :is-typing="isTyping"
+        :selected-provider="selectedProvider"
+        :selected-model="selectedModel"
+        :selected-module="selectedModule"
+        @send="sendMessage"
+        @stop="stopGeneration"
+        @attach-files="handleAttachFiles"
+        @remove-file="removeFile"
+        @open-image="openImageModal"
+        @select-model="handleSelectModel"
+      />
     </div>
 
-    <ImageViewer v-model:visible="imageModal.show" :images="imageModal.images" :current-index="imageModal.currentIndex"
-      @navigate="navigateImage" />
+    <ImageViewer
+      v-model:visible="imageModal.show"
+      :images="imageModal.images"
+      :current-index="imageModal.currentIndex"
+      @navigate="navigateImage"
+    />
   </div>
 </template>

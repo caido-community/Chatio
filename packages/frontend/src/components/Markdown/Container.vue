@@ -3,7 +3,10 @@ import DOMPurify from "dompurify";
 import MarkdownIt from "markdown-it";
 import { computed } from "vue";
 
-const { content } = defineProps<{ content: string }>();
+const { content, variant = "default" } = defineProps<{
+  content: string;
+  variant?: "default" | "thinking";
+}>();
 
 const md = new MarkdownIt({
   breaks: true,
@@ -20,7 +23,10 @@ const rendered = computed(() => {
 <template>
   <!-- eslint-disable vue/no-v-html -->
   <div
-    class="markdown-content break-words select-text font-mono text-sm"
+    :class="[
+      'markdown-content break-words select-text font-mono',
+      variant === 'thinking' ? 'thinking-variant' : 'text-sm',
+    ]"
     v-html="rendered"
   ></div>
   <!-- eslint-enable vue/no-v-html -->
@@ -103,5 +109,29 @@ const rendered = computed(() => {
   border: 1px solid rgba(255, 255, 255, 0.15);
   padding: 0.5em;
   text-align: left;
+}
+
+/* Thinking variant - grey and smaller */
+.thinking-variant {
+  font-size: 0.75rem;
+  color: var(--p-surface-400);
+}
+
+.thinking-variant :deep(*) {
+  color: var(--p-surface-400);
+}
+
+.thinking-variant :deep(code) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--p-surface-400);
+  font-size: 0.7rem;
+}
+
+.thinking-variant :deep(pre) {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.thinking-variant :deep(pre code) {
+  color: var(--p-surface-400);
 }
 </style>

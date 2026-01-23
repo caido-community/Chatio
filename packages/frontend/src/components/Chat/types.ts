@@ -14,6 +14,8 @@ export interface Message {
   model?: string;
   status?: string;
   files?: AttachedFile[];
+  reasoning?: string;
+  thinkingDuration?: number;
 }
 
 export interface ChatSession {
@@ -26,8 +28,6 @@ export interface ChatSession {
   selectedModel?: string;
   selectedModule?: string;
 }
-
-// Unused types removed
 
 export function formatDate(date: Date): string {
   const now = new Date();

@@ -3,18 +3,22 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^3.0.5",
     "@caido/primevue": "^0.1.13",
     "@caido/sdk-frontend": "^0.48.1",
-    "ai": "^5.0.116",
+    "@vueuse/core": "^14.1.0",
+    "ai": "^6.0.0",
     "dompurify": "^3.3.1",
     "markdown-it": "^14.1.0",
     "primevue": "4.1.0",
     "vue": "^3.5.12"
   },
   "devDependencies": {
+    "@caido/sdk-backend": "^0.54.1",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "20.14.9",
     "typescript": "5.5.4",
     "vue-tsc": "^3.2.1"

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import Button from "primevue/button";
-import Select from "primevue/select";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import type { AttachedFile } from "../types";
+
+import ModelSelector from "./ModelSelector.vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { useStorage } from "@/services/storage";
@@ -13,7 +14,6 @@ import {
   type ModelItem,
   type ModelUserConfig,
   Provider,
-  providers,
 } from "@/stores/models";
 
 interface ReplaySession {
@@ -152,19 +152,19 @@ const getEnabledModelsForProvider = (provider: Provider): ModelItem[] => {
   });
 };
 
-const changeProvider = async (provider: Provider) => {
-  localSelectedProvider.value = provider;
-  models.value = getEnabledModelsForProvider(provider);
-
-  if (models.value.length > 0 && models.value[0]) {
-    selectedModelId.value = models.value[0].id;
-    emit("selectModel", provider, models.value[0].id, models.value[0].name);
-  }
+const handleModelSelect = async (
+  provider: string,
+  modelId: string,
+  modelName: string,
+) => {
+  selectedModelId.value = modelId;
+  localSelectedProvider.value = provider as Provider;
+  emit("selectModel", provider, modelId, modelName);
 
   await storageService.setAppState({
     activeChatId: "",
     selectedProvider: provider,
-    selectedModel: selectedModelId.value,
+    selectedModel: modelId,
   });
 };
 
@@ -444,96 +444,11 @@ onMounted(() => {
 
       <div class="flex gap-2 items-center min-w-0">
         <div class="flex gap-2 shrink-0">
-          <Select
-            v-model="localSelectedProvider"
-            :options="providers"
-            option-label="name"
-            option-value="id"
-            placeholder="Provider"
-            :pt="{
-              root: {
-                class:
-                  'inline-flex relative rounded-md bg-transparent transition-all duration-200 hover:border-secondary-400 cursor-pointer select-none',
-              },
-              label: {
-                class:
-                  'block bg-transparent border-0 text-white/80 placeholder:text-surface-500 transition duration-200 focus:outline-none cursor-pointer overflow-hidden overflow-ellipsis whitespace-nowrap font-mono text-sm',
-              },
-              dropdownicon: { class: 'h-2 mb-0.5' },
-            }"
-            @change="changeProvider(localSelectedProvider)"
-          >
-            <template #value>
-              <div class="flex items-center gap-2 text-surface-400 text-sm">
-                <component
-                  :is="
-                    providers.find((p) => p.id === localSelectedProvider)?.icon
-                  "
-                  class="h-4 w-4"
-                />
-                <span>{{
-                  providers.find((p) => p.id === localSelectedProvider)?.name ??
-                  "Provider"
-                }}</span>
-              </div>
-            </template>
-            <template #option="slotProps">
-              <div class="flex items-center gap-2 text-surface-300 text-sm">
-                <component :is="slotProps.option.icon" class="h-4 w-4" />
-                <span>{{ slotProps.option.name }}</span>
-              </div>
-            </template>
-          </Select>
-          <Select
+          <ModelSelector
             v-model="selectedModelId"
-            :options="models"
-            option-label="name"
-            option-value="id"
-            filter
-            filter-placeholder="Search models..."
-            placeholder="Select model"
-            :pt="{
-              root: {
-                class:
-                  'inline-flex relative rounded-md bg-transparent transition-all duration-200 hover:border-secondary-400 cursor-pointer select-none',
-              },
-              label: {
-                class:
-                  'block bg-transparent border-0 text-white/80 placeholder:text-surface-500 transition duration-200 focus:outline-none cursor-pointer overflow-hidden overflow-ellipsis whitespace-nowrap font-mono text-sm',
-              },
-              dropdownicon: { class: 'h-2 mb-0.5' },
-            }"
-          >
-            <template #value>
-              <div
-                class="flex items-center gap-2 text-surface-400 text-sm transition-colors duration-200 hover:text-surface-200"
-              >
-                <component
-                  :is="models.find((m) => m.id === selectedModelId)?.icon"
-                  v-if="models.find((m) => m.id === selectedModelId)?.icon"
-                  class="h-4 w-4"
-                />
-                <div v-else class="h-3 w-3 rounded-sm bg-surface-500" />
-                <span class="truncate">
-                  {{
-                    models.find((m) => m.id === selectedModelId)?.name ||
-                    "Select model"
-                  }}
-                </span>
-              </div>
-            </template>
-            <template #option="slotProps">
-              <div class="flex items-center gap-2 text-surface-300 text-sm">
-                <component
-                  :is="slotProps.option.icon"
-                  v-if="slotProps.option.icon"
-                  class="h-4 w-4"
-                />
-                <div v-else class="h-3 w-3 rounded-sm bg-surface-500" />
-                <span class="truncate">{{ slotProps.option.name }}</span>
-              </div>
-            </template>
-          </Select>
+            :custom-models="customModels"
+            @select="handleModelSelect"
+          />
         </div>
 
         <div class="flex items-center gap-2 min-w-0 flex-1 justify-end">

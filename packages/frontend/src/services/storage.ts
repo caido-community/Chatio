@@ -70,13 +70,13 @@ class CaidoStorageService {
       (projectId: string | undefined) => {
         const oldProjectId = this.currentProjectId;
         this.currentProjectId = projectId;
-        
+
         window.dispatchEvent(
-          new CustomEvent("chatio-project-changed", { 
-            detail: { 
+          new CustomEvent("chatio-project-changed", {
+            detail: {
               projectId,
-              oldProjectId 
-            } 
+              oldProjectId,
+            },
           }),
         );
       },
@@ -151,7 +151,10 @@ class CaidoStorageService {
     await this.saveToStorage();
   }
 
-  async setChatHistoryForProject(projectId: string, history: ChatSession[]): Promise<void> {
+  async setChatHistoryForProject(
+    projectId: string,
+    history: ChatSession[],
+  ): Promise<void> {
     await this.waitForInitialization();
     const projectKey = projectId ?? "global";
     if (this.cache.projects === undefined) this.cache.projects = {};

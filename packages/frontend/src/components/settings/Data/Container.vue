@@ -190,7 +190,9 @@ const confirmClearAll = () => {
         >
           <i class="fas fa-info-circle mt-0.5" />
           <span>
-            "Delete All Chats" removes chat history for the current project only. "Clear All Data" removes all data across all projects including settings and API keys.
+            "Delete All Chats" removes chat history for the current project
+            only. "Clear All Data" removes all data across all projects
+            including settings and API keys.
           </span>
         </div>
       </div>
@@ -208,10 +210,12 @@ const confirmClearAll = () => {
       <i class="fas fa-exclamation-triangle text-amber-400 text-xl mt-1" />
       <div>
         <p class="text-surface-300">
-          Are you sure you want to delete all chat history for the current project?
+          Are you sure you want to delete all chat history for the current
+          project?
         </p>
         <p class="text-sm text-surface-500 mt-2">
-          This will only delete chats for this project. Other projects will not be affected. This action cannot be undone.
+          This will only delete chats for this project. Other projects will not
+          be affected. This action cannot be undone.
         </p>
       </div>
     </div>
@@ -237,7 +241,8 @@ const confirmClearAll = () => {
       <div>
         <p class="text-surface-300">Are you sure you want to clear ALL data?</p>
         <p class="text-sm text-surface-500 mt-2">
-          This will remove all settings, API keys, and chat history across ALL projects. This action cannot be undone.
+          This will remove all settings, API keys, and chat history across ALL
+          projects. This action cannot be undone.
         </p>
       </div>
     </div>

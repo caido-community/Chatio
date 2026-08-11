@@ -131,7 +131,7 @@ const handleSelect = (model: ModelItem & { isConfigured: boolean }) => {
         {{ selectedModel?.name ?? "Select model" }}
       </span>
       <i
-        v-if="selectedModel?.isReasoningModel"
+        v-if="selectedModel?.capabilities.reasoning"
         class="fas fa-brain text-xs text-surface-500"
       />
       <i
@@ -231,7 +231,7 @@ const handleSelect = (model: ModelItem & { isConfigured: boolean }) => {
                 <span class="truncate flex-1">{{ model.name }}</span>
                 <div class="flex items-center gap-1.5 shrink-0 ml-1">
                   <i
-                    v-if="model.isReasoningModel"
+                    v-if="model.capabilities.reasoning"
                     v-tooltip.right="'Reasoning Model'"
                     class="fas fa-brain text-[10px] text-surface-500"
                   />

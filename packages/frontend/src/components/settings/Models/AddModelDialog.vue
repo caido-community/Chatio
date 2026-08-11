@@ -20,7 +20,7 @@ const emit = defineEmits<{
 const name = ref("");
 const modelId = ref("");
 const provider = ref<Provider>(Provider.OpenRouter);
-const isReasoningModel = ref(false);
+const hasReasoning = ref(false);
 
 const providerOptions = providers.map((p) => ({
   label: p.name,
@@ -35,7 +35,7 @@ const handleSave = () => {
     id: modelId.value.trim(),
     provider: provider.value,
     isCustom: true,
-    isReasoningModel: isReasoningModel.value,
+    capabilities: { reasoning: hasReasoning.value },
   });
 
   resetForm();
@@ -50,7 +50,7 @@ const resetForm = () => {
   name.value = "";
   modelId.value = "";
   provider.value = Provider.OpenRouter;
-  isReasoningModel.value = false;
+  hasReasoning.value = false;
 };
 </script>
 
@@ -105,7 +105,7 @@ const resetForm = () => {
       </div>
 
       <div class="flex items-center gap-2">
-        <Checkbox v-model="isReasoningModel" binary input-id="reasoning" />
+        <Checkbox v-model="hasReasoning" binary input-id="reasoning" />
         <label for="reasoning" class="text-surface-200 cursor-pointer">
           Is Reasoning Model
         </label>

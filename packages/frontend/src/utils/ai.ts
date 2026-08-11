@@ -1,9 +1,13 @@
 import type { LanguageModelV2 } from "@ai-sdk/provider";
 
-import { defaultModels, type ModelItem, Provider } from "@/stores/models";
+import {
+  defaultModels,
+  Provider,
+  supportsProviderReasoning,
+} from "@/stores/models";
 import type { FrontendSDK } from "@/types";
 
-interface AISDK extends FrontendSDK {
+type AISDK = FrontendSDK & {
   ai: {
     createProvider: () => (
       modelId: string,
@@ -17,12 +21,19 @@ interface AISDK extends FrontendSDK {
       status: string;
     }>;
   };
-}
+};
 
-export interface ProviderStatus {
+type ProviderStatus = {
   id: string;
   isConfigured: boolean;
-}
+};
+
+const providerIdMap: Record<Provider, string> = {
+  [Provider.OpenRouter]: "openrouter",
+  [Provider.OpenAI]: "openai",
+  [Provider.Anthropic]: "anthropic",
+  [Provider.Google]: "google",
+};
 
 export function getProviderStatuses(sdk: FrontendSDK): ProviderStatus[] {
   const aiSdk = sdk as unknown as AISDK;
@@ -35,26 +46,9 @@ export function getProviderStatuses(sdk: FrontendSDK): ProviderStatus[] {
   }));
 }
 
-export function isProviderConfigured(
-  sdk: FrontendSDK,
-  provider: Provider,
-): boolean {
-  const statuses = getProviderStatuses(sdk);
-  // Map our Provider enum to SDK provider IDs
-  const providerIdMap: Record<Provider, string> = {
-    [Provider.OpenRouter]: "openrouter",
-    [Provider.OpenAI]: "openai",
-    [Provider.Anthropic]: "anthropic",
-    [Provider.Google]: "google",
-  };
-  const sdkProviderId = providerIdMap[provider];
-  const status = statuses.find((s) => s.id === sdkProviderId);
-  return status?.isConfigured ?? false;
-}
-
-interface CreateModelOptions {
+type CreateModelOptions = {
   reasoning?: boolean;
-}
+};
 
 export function createModel(
   sdk: FrontendSDK,
@@ -64,27 +58,22 @@ export function createModel(
   const { reasoning = true } = options;
 
   const modelInfo = defaultModels.find((m) => m.id === modelId);
-  const isReasoningModel = reasoning && (modelInfo?.isReasoningModel ?? false);
+  const modelProvider = modelInfo?.provider ?? Provider.OpenRouter;
+
+  const isReasoningModel =
+    reasoning &&
+    (modelInfo?.capabilities.reasoning ?? false) &&
+    supportsProviderReasoning(modelProvider);
 
   const provider = (sdk as unknown as AISDK).ai.createProvider();
 
-  const providerIdMap: Record<Provider, string> = {
-    [Provider.OpenRouter]: "openrouter",
-    [Provider.OpenAI]: "openai",
-    [Provider.Anthropic]: "anthropic",
-    [Provider.Google]: "google",
-  };
-
-  const modelProvider = modelInfo?.provider ?? Provider.OpenRouter;
-  const providerId = providerIdMap[modelProvider];
-
   const baseModelId = modelId.split(":thinking")[0];
-  const modelKey = `${providerId}/${baseModelId}`;
+  const modelKey = `${providerIdMap[modelProvider]}/${baseModelId}`;
 
-  const model = provider(modelKey, {
+  return provider(modelKey, {
     ...(isReasoningModel && {
       reasoning: {
-        effort: "high",
+        effort: "medium",
       },
     }),
     capabilities: {
@@ -92,10 +81,4 @@ export function createModel(
       structured_output: true,
     },
   });
-
-  return model;
-}
-
-export function getModelInfo(modelId: string): ModelItem | undefined {
-  return defaultModels.find((m) => m.id === modelId);
 }

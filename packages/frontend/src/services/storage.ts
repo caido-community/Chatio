@@ -1,6 +1,14 @@
 import type { ChatSession } from "../components/Chat/types";
-import type { ModelItem, ModelUserConfig } from "../stores/models";
+import type {
+  ModelCapabilities,
+  ModelItem,
+  ModelUserConfig,
+} from "../stores/models";
 import type { FrontendSDK } from "../types";
+
+type StoredModel = Omit<ModelItem, "capabilities"> & {
+  capabilities?: ModelCapabilities;
+};
 
 interface ChatSettings {
   systemPrompt?: string;
@@ -32,7 +40,7 @@ interface GlobalStorageData {
       autoSave: boolean;
     };
     modelConfigs?: Record<string, ModelUserConfig>;
-    customModels?: ModelItem[];
+    customModels?: StoredModel[];
   };
   projects?: Record<string, ProjectStorageData>;
 }
@@ -223,7 +231,11 @@ class CaidoStorageService {
 
   async getCustomModels(): Promise<ModelItem[]> {
     await this.waitForInitialization();
-    return this.cache.globalSettings?.customModels ?? [];
+    const stored = this.cache.globalSettings?.customModels ?? [];
+    return stored.map((model) => ({
+      ...model,
+      capabilities: model.capabilities ?? { reasoning: false },
+    }));
   }
 
   async setCustomModels(models: ModelItem[]): Promise<void> {

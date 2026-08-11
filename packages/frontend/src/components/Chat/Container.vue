@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { streamText } from "ai";
+import { type ModelMessage, streamText } from "ai";
 import { onMounted, onUnmounted, reactive, ref } from "vue";
 
 import { ImageViewer } from "./Dialogs";
@@ -140,6 +140,7 @@ const cancelEditChat = () => {
 };
 
 const saveChatSession = async () => {
+  if (!autoSaveEnabled.value) return;
   if (currentMessages.length === 0) return;
   const title =
     currentMessages[0]?.content.slice(0, 30) +
@@ -386,26 +387,40 @@ const sendMessage = async () => {
     const messagesToSend = currentMessages.slice(0, -1);
     const limitedMessages = messagesToSend.slice(-maxMessages);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const coreMessages: any[] = await Promise.all(
-      limitedMessages.map(async (msg) => {
-        let content = msg.content;
-        if (msg.role === "user") {
-          content = await resolveMessageContent(msg.content);
-          if (msg.files && msg.files.length > 0) {
-            const fileContents = msg.files
-              .map((f) => {
-                if (f.type.startsWith("image/")) {
-                  return `[Image: ${f.name}]`;
-                }
-                return `\n--- ${f.name} ---\n${f.content}\n---`;
-              })
-              .join("\n");
-            content += "\n\nAttached files:" + fileContents;
-          }
+    const coreMessages: ModelMessage[] = await Promise.all(
+      limitedMessages.map(async (msg): Promise<ModelMessage> => {
+        if (msg.role === "assistant") {
+          return { role: "assistant", content: msg.content };
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return { role: msg.role, content } as any;
+
+        let text = await resolveMessageContent(msg.content);
+        const files = msg.files ?? [];
+        const images = files.filter((f) => f.type.startsWith("image/"));
+        const documents = files.filter((f) => !f.type.startsWith("image/"));
+
+        if (documents.length > 0) {
+          text +=
+            "\n\nAttached files:" +
+            documents
+              .map((f) => `\n--- ${f.name} ---\n${f.content}\n---`)
+              .join("\n");
+        }
+
+        if (images.length === 0) {
+          return { role: "user", content: text };
+        }
+
+        return {
+          role: "user",
+          content: [
+            { type: "text", text },
+            ...images.map((f) => ({
+              type: "image" as const,
+              image: f.content,
+              mediaType: f.type,
+            })),
+          ],
+        };
       }),
     );
 
@@ -427,7 +442,11 @@ const sendMessage = async () => {
     let reasoningStartTime: number | undefined;
 
     for await (const part of result.fullStream) {
-      if (part.type === "reasoning-delta") {
+      if (part.type === "error") {
+        throw part.error instanceof Error
+          ? part.error
+          : new Error(String(part.error));
+      } else if (part.type === "reasoning-delta") {
         if (!isReasoning) {
           isReasoning = true;
           reasoningStartTime = Date.now();
@@ -536,7 +555,10 @@ onMounted(async () => {
     }>;
     const oldProjectId = customEvent?.detail?.oldProjectId;
 
-    if (currentMessages.length > 0 || chatHistory.length > 0) {
+    if (
+      autoSaveEnabled.value &&
+      (currentMessages.length > 0 || chatHistory.length > 0)
+    ) {
       if (oldProjectId !== undefined) {
         const tempHistory = [...chatHistory];
         if (currentMessages.length > 0) {

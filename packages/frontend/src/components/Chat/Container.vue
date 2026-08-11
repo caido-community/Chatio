@@ -297,6 +297,15 @@ const handleClickMention = (mentionId: string) => {
   }
 };
 
+const getReplaySessionRaw = async (
+  sessionId: string,
+): Promise<string | undefined> => {
+  const response = await sdk.graphql.replaySessionEntries({ id: sessionId });
+  const entry = response.replaySession?.activeEntry;
+  if (entry === undefined || entry === null) return undefined;
+  return entry.__typename === "ReplayEntryWs" ? entry.http.raw : entry.raw;
+};
+
 const resolveMessageContent = async (content: string): Promise<string> => {
   const mentionRegex = /@\[([^\]]+)\]\(replay:([^)]+)\)/g;
   const matches = [...content.matchAll(mentionRegex)];
@@ -309,27 +318,16 @@ const resolveMessageContent = async (content: string): Promise<string> => {
     const [fullMatch, name, sessionId] = match;
     if (sessionId === undefined) continue;
 
-    try {
-      const sessionResponse = await sdk.graphql.replaySessionEntries({
-        id: sessionId,
-      });
-      const activeEntryId = sessionResponse?.replaySession?.activeEntry?.id;
-
-      if (activeEntryId !== undefined) {
-        const entryResponse = await sdk.graphql.replayEntry({
-          id: activeEntryId,
-        });
-
-        const rawContent = entryResponse?.replayEntry?.raw;
-
-        if (rawContent !== undefined) {
-          const replacement = `\n\n### Content of ${name} (Session ${sessionId}):\n\`\`\`http\n${rawContent}\n\`\`\`\n\n`;
-          resolvedContent = resolvedContent.replace(fullMatch, replacement);
-        }
-      }
-    } catch (error) {
-      console.error(`Failed to resolve session ${sessionId}:`, error);
+    const raw = await getReplaySessionRaw(sessionId);
+    if (raw === undefined) {
+      showToast(sdk, `Could not read Replay session "${name}"`, "error");
+      continue;
     }
+
+    resolvedContent = resolvedContent.replace(
+      fullMatch,
+      `\n\n### Content of ${name} (Session ${sessionId}):\n\`\`\`http\n${raw}\n\`\`\`\n\n`,
+    );
   }
 
   return resolvedContent;

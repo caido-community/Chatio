@@ -318,7 +318,9 @@ export const defaultModels: ModelItem[] = [
   ...googleModels,
 ];
 
-export const defaultEnabledModels = new Set<string>(defaultModels.map((m) => m.id));
+export const defaultEnabledModels = new Set<string>(
+  defaultModels.map((m) => m.id),
+);
 
 export function getModelById(id: string): ModelItem | undefined {
   return defaultModels.find((m) => m.id === id);

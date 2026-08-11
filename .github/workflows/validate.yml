@@ -1,0 +1,28 @@
+name: Validate
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+concurrency:
+  group: validate-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.4.0
+
+      - name: Install mise
+        uses: jdx/mise-action@v4.2.3
+
+      - name: Run validation (typecheck, lint, knip)
+        run: mise run validate
+
+      - name: Build plugin package
+        run: mise run build

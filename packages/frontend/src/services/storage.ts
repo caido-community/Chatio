@@ -1,4 +1,5 @@
 import type { ChatSession } from "../components/Chat/types";
+import { DEFAULT_CHAT_SETTINGS } from "../constants";
 import type {
   ModelCapabilities,
   ModelItem,
@@ -126,11 +127,7 @@ class CaidoStorageService {
     if (globalSettings === undefined) return undefined;
     return {
       providers: globalSettings.providers ?? {},
-      chatSettings: globalSettings.chatSettings ?? {
-        maxMessages: 25,
-        systemPrompt: "",
-        autoSave: true,
-      },
+      chatSettings: globalSettings.chatSettings ?? { ...DEFAULT_CHAT_SETTINGS },
     };
   }
 

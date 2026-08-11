@@ -135,16 +135,21 @@ const aboutInfo = {
         </div>
 
         <div class="border border-surface-700 rounded p-4">
-          <h3 class="text-lg font-semibold mb-3">File & Image Attachments</h3>
+          <h3 class="text-lg font-semibold mb-3">File Attachments</h3>
           <p class="text-surface-300 leading-relaxed mb-3">
-            Upload files or images for analysis:
+            Upload text files for analysis:
           </p>
           <ul class="list-disc list-inside space-y-1 text-surface-300 ml-4">
             <li>Source code files for security review</li>
-            <li>Screenshots and images (requires vision-capable models)</li>
             <li>Configuration files and documentation</li>
+            <li>HTTP requests and responses saved to disk</li>
             <li>Drag and drop or use the attachment button</li>
           </ul>
+          <p class="text-surface-400 text-sm mt-3">
+            Images cannot be attached. Caido's AI provider accepts only text, so
+            an image would never reach the model regardless of which provider or
+            model you pick.
+          </p>
         </div>
 
         <div class="border border-surface-700 rounded p-4">
@@ -271,11 +276,12 @@ const aboutInfo = {
         </div>
 
         <div class="pb-4 border-b border-surface-700 last:border-b-0">
-          <h5 class="font-semibold mb-2">Images Not Working</h5>
+          <h5 class="font-semibold mb-2">Images Cannot Be Attached</h5>
           <p class="text-surface-300 text-sm">
-            Image analysis requires a vision-capable model. The Claude, Gemini
-            and GPT models all support images; switch to one of those if an
-            attached screenshot is ignored.
+            This is a Caido limitation, not a model one. Caido's AI provider
+            accepts only text and tool results, so image attachments are blocked
+            rather than silently dropped. Paste the relevant text or HTTP
+            request instead.
           </p>
         </div>
       </div>

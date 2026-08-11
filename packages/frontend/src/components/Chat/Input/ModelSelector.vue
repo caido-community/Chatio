@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onClickOutside } from "@vueuse/core";
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import {
@@ -33,14 +33,22 @@ onClickOutside(containerRef, () => {
   isOpen.value = false;
 });
 
-const toggle = () => {
-  isOpen.value = !isOpen.value;
+const providerStatuses = ref(new Map<string, boolean>());
+
+const refreshProviderStatuses = () => {
+  providerStatuses.value = new Map(
+    getProviderStatuses(sdk).map((s) => [s.id, s.isConfigured]),
+  );
 };
 
-const providerStatuses = computed(() => {
-  const statuses = getProviderStatuses(sdk);
-  return new Map(statuses.map((s) => [s.id, s.isConfigured]));
-});
+onMounted(refreshProviderStatuses);
+
+const toggle = () => {
+  isOpen.value = !isOpen.value;
+  if (isOpen.value) {
+    refreshProviderStatuses();
+  }
+};
 
 const providerIdMap: Record<Provider, string> = {
   [Provider.OpenRouter]: "openrouter",

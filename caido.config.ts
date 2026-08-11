@@ -1,18 +1,19 @@
+import { resolve } from "path";
+
+import tailwindCaido from "@caido/tailwindcss";
 import { defineConfig } from "@caido-community/dev";
 import vue from "@vitejs/plugin-vue";
+import prefixwrap from "postcss-prefixwrap";
 import tailwindcss from "tailwindcss";
 // @ts-expect-error no declared types at this time
 import tailwindPrimeui from "tailwindcss-primeui";
-import tailwindCaido from "@caido/tailwindcss";
-import { resolve } from "path";
-import prefixwrap from "postcss-prefixwrap";
 
 const id = "chatio";
 export default defineConfig({
   id,
   name: "Chatio",
   description: "An AI-powered assistant for hackers and security professionals built for Caido",
-  version: "2.0.0",
+  version: "2.0.1",
   author: {
     name: "Amr Elsagaei",
     email: "info@amralsagaei.com",

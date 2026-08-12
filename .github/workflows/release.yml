@@ -3,37 +3,45 @@ name: Release
 on:
   workflow_dispatch:
 
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # create the release and upload the plugin package
 
     steps:
-      - name: Verify main branch
-        run: |
-          if [[ "${{ github.ref_name }}" != "main" ]]; then
-            echo "Release can only be done on the main branch."
-            exit 1
-          fi
-
       - name: Checkout project
-        uses: actions/checkout@v4.4.0
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Resolve commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Install mise
-        uses: jdx/mise-action@v4.2.3
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
 
       - name: Build package
         run: mise run build
 
       - name: Sign package
         working-directory: dist
+        env:
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
         run: |
-          if [[ -z "${{ secrets.PRIVATE_KEY }}" ]]; then
+          if [[ -z "${PRIVATE_KEY}" ]]; then
             echo "Set an ed25519 key as PRIVATE_KEY in GitHub Action secret to sign."
           else
-            echo "${{ secrets.PRIVATE_KEY }}" > private_key.pem
+            echo "${PRIVATE_KEY}" > private_key.pem
             openssl pkeyutl -sign -inkey private_key.pem -out plugin_package.zip.sig -rawin -in plugin_package.zip
             rm private_key.pem
           fi
@@ -43,13 +51,13 @@ jobs:
         working-directory: dist
         run: |
           VERSION=$(unzip -p plugin_package.zip manifest.json | jq -r .version)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Create release
-        uses: caido/action-release@v1.20.0
+        uses: caido/action-release@b7eabc95ff50cbeeedec83973935c8f306dfcd0b # v1.20.0
         with:
           tag: ${{ steps.meta.outputs.version }}
-          commit: ${{ github.sha }}
+          commit: ${{ steps.commit.outputs.sha }}
           body: "Release ${{ steps.meta.outputs.version }}"
           generateReleaseNotes: true
           artifacts: "dist/plugin_package.zip,dist/plugin_package.zip.sig"

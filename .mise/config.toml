@@ -1,0 +1,19 @@
+[tools]
+node = "24.11.1"
+pnpm = "11.18.0"
+
+[tasks.validate]
+description = "Run all quality checks (typecheck, lint, knip)"
+run = """
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm knip
+"""
+
+[tasks.build]
+description = "Build the plugin package"
+run = """
+pnpm install --frozen-lockfile
+pnpm build
+"""

@@ -1,4 +1,5 @@
 packages:
-  - packages/*
-ignoredBuiltDependencies:
-  - esbuild
+  - "packages/*"
+allowBuilds:
+  esbuild: true
+  sharp: true

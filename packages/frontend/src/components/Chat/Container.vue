@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { streamText } from "ai";
-import { onMounted, onUnmounted, reactive, ref } from "vue";
+import { type ModelMessage, streamText } from "ai";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 
 import { ImageViewer } from "./Dialogs";
 import { Header } from "./Header";
@@ -10,7 +10,11 @@ import { Messages } from "./Messages";
 import type { AttachedFile, ChatSession, Message } from "./types";
 import { generateChatId } from "./types";
 
-import { MAX_FILE_SIZE, MAX_TOTAL_FILES_SIZE } from "@/constants";
+import {
+  DEFAULT_CHAT_SETTINGS,
+  MAX_FILE_SIZE,
+  MAX_TOTAL_FILES_SIZE,
+} from "@/constants";
 import { useSDK } from "@/plugins/sdk";
 import { useStorage } from "@/services/storage";
 import { showToast } from "@/services/utils";
@@ -19,7 +23,12 @@ import { createModel } from "@/utils/ai";
 const sdk = useSDK();
 const storageService = useStorage(sdk);
 
-let abortController: AbortController | undefined = undefined;
+type Generation = {
+  controller: AbortController;
+  status: string;
+};
+
+const generations = reactive(new Map<string, Generation>());
 
 const currentChatId = ref("default");
 const chatHistory = reactive<ChatSession[]>([]);
@@ -27,9 +36,10 @@ const currentMessages = reactive<Message[]>([]);
 const currentMessage = ref("");
 const attachedFiles = reactive<AttachedFile[]>([]);
 
-const isLoading = ref(false);
-const isTyping = ref(false);
-const currentStatus = ref("");
+const isLoading = computed(() => generations.has(currentChatId.value));
+const currentStatus = computed(
+  () => generations.get(currentChatId.value)?.status ?? "",
+);
 const isProjectChanging = ref(false);
 const autoSaveEnabled = ref(true);
 const showHistory = ref(true);
@@ -102,6 +112,7 @@ const createNewChat = async () => {
 const deleteChat = async (chatId: string) => {
   const index = chatHistory.findIndex((c) => c.id === chatId);
   if (index >= 0) {
+    generations.get(chatId)?.controller.abort();
     chatHistory.splice(index, 1);
     await storageService.setChatHistory(chatHistory);
     if (currentChatId.value === chatId) {
@@ -139,7 +150,10 @@ const cancelEditChat = () => {
   editingTitle.value = "";
 };
 
-const saveChatSession = async () => {
+const settled = (messages: Message[]): Message[] =>
+  messages.filter((m) => m.role === "user" || m.content !== "");
+
+const upsertSession = () => {
   if (currentMessages.length === 0) return;
   const title =
     currentMessages[0]?.content.slice(0, 30) +
@@ -161,7 +175,28 @@ const saveChatSession = async () => {
   };
   if (existingIndex >= 0) chatHistory.splice(existingIndex, 1);
   chatHistory.unshift(session);
-  await storageService.setChatHistory(chatHistory);
+};
+
+const persistHistory = async () => {
+  if (!autoSaveEnabled.value) return;
+  await storageService.setChatHistory(
+    chatHistory.map((c) => ({ ...c, messages: settled(c.messages) })),
+  );
+};
+
+const saveChatSession = async () => {
+  upsertSession();
+  await persistHistory();
+};
+
+const dropMessage = (chatId: string, message: Message) => {
+  const index = currentMessages.indexOf(message);
+  if (index >= 0) currentMessages.splice(index, 1);
+
+  const session = chatHistory.find((c) => c.id === chatId);
+  if (session === undefined) return;
+  const sessionIndex = session.messages.indexOf(message);
+  if (sessionIndex >= 0) session.messages.splice(sessionIndex, 1);
 };
 
 const saveAppState = async () => {
@@ -219,35 +254,52 @@ const handleSelectModel = (
   selectedModule.value = displayName;
 };
 
-const handleAttachFiles = (files: FileList) => {
-  const currentTotalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
+const readFile = (file: File, asDataUrl: boolean): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error(`Failed to read "${file.name}"`));
+    if (asDataUrl) reader.readAsDataURL(file);
+    else reader.readAsText(file);
+  });
 
+const handleAttachFiles = async (files: FileList) => {
   for (const file of Array.from(files)) {
+    if (file.type.startsWith("image/")) {
+      showToast(
+        sdk,
+        "Caido's AI provider cannot receive images yet, so they can't be attached",
+        "error",
+      );
+      continue;
+    }
+
     if (file.size > MAX_FILE_SIZE) {
       showToast(sdk, `File "${file.name}" exceeds 10MB limit`, "error");
       continue;
     }
 
-    const newTotalSize = currentTotalSize + file.size;
-    if (newTotalSize > MAX_TOTAL_FILES_SIZE) {
+    const content = await readFile(file, file.type.startsWith("image/")).catch(
+      () => undefined,
+    );
+
+    if (content === undefined) {
+      showToast(sdk, `Failed to read file "${file.name}"`, "error");
+      continue;
+    }
+
+    const currentTotalSize = attachedFiles.reduce((sum, f) => sum + f.size, 0);
+    if (currentTotalSize + file.size > MAX_TOTAL_FILES_SIZE) {
       showToast(sdk, `Total file size exceeds 50MB limit`, "error");
       break;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      attachedFiles.push({
-        name: file.name,
-        content: reader.result as string,
-        type: file.type,
-        size: file.size,
-      });
-    };
-    reader.onerror = () => {
-      showToast(sdk, `Failed to read file "${file.name}"`, "error");
-    };
-    if (file.type.startsWith("image/")) reader.readAsDataURL(file);
-    else reader.readAsText(file);
+    attachedFiles.push({
+      name: file.name,
+      content,
+      type: file.type,
+      size: file.size,
+    });
   }
 };
 
@@ -297,6 +349,15 @@ const handleClickMention = (mentionId: string) => {
   }
 };
 
+const getReplaySessionRaw = async (
+  sessionId: string,
+): Promise<string | undefined> => {
+  const response = await sdk.graphql.replaySessionEntries({ id: sessionId });
+  const entry = response.replaySession?.activeEntry;
+  if (entry === undefined || entry === null) return undefined;
+  return entry.__typename === "ReplayEntryWs" ? entry.http.raw : entry.raw;
+};
+
 const resolveMessageContent = async (content: string): Promise<string> => {
   const mentionRegex = /@\[([^\]]+)\]\(replay:([^)]+)\)/g;
   const matches = [...content.matchAll(mentionRegex)];
@@ -309,27 +370,16 @@ const resolveMessageContent = async (content: string): Promise<string> => {
     const [fullMatch, name, sessionId] = match;
     if (sessionId === undefined) continue;
 
-    try {
-      const sessionResponse = await sdk.graphql.replaySessionEntries({
-        id: sessionId,
-      });
-      const activeEntryId = sessionResponse?.replaySession?.activeEntry?.id;
-
-      if (activeEntryId !== undefined) {
-        const entryResponse = await sdk.graphql.replayEntry({
-          id: activeEntryId,
-        });
-
-        const rawContent = entryResponse?.replayEntry?.raw;
-
-        if (rawContent !== undefined) {
-          const replacement = `\n\n### Content of ${name} (Session ${sessionId}):\n\`\`\`http\n${rawContent}\n\`\`\`\n\n`;
-          resolvedContent = resolvedContent.replace(fullMatch, replacement);
-        }
-      }
-    } catch (error) {
-      console.error(`Failed to resolve session ${sessionId}:`, error);
+    const raw = await getReplaySessionRaw(sessionId);
+    if (raw === undefined) {
+      showToast(sdk, `Could not read Replay session "${name}"`, "error");
+      continue;
     }
+
+    resolvedContent = resolvedContent.replace(
+      fullMatch,
+      `\n\n### Content of ${name} (Session ${sessionId}):\n\`\`\`http\n${raw}\n\`\`\`\n\n`,
+    );
   }
 
   return resolvedContent;
@@ -358,14 +408,7 @@ const sendMessage = async () => {
     timestamp: new Date(),
     files: attachedFiles.length > 0 ? [...attachedFiles] : undefined,
   };
-  currentMessages.push(userMessage);
-  currentMessage.value = "";
-  attachedFiles.splice(0);
-  await saveChatSession();
-
-  isLoading.value = true;
-  isTyping.value = true;
-  currentStatus.value = "Thinking...";
+  const chatId = currentChatId.value;
 
   const assistantMessage: Message = {
     id: (Date.now() + 1).toString(),
@@ -375,52 +418,77 @@ const sendMessage = async () => {
     provider: selectedProvider.value,
     model: selectedModel.value,
   };
-  currentMessages.push(assistantMessage);
-  const assistantIndex = currentMessages.length - 1;
+
+  currentMessages.push(userMessage, assistantMessage);
+  currentMessage.value = "";
+  attachedFiles.splice(0);
+  upsertSession();
+  await persistHistory();
+
+  const generation: Generation = {
+    controller: new AbortController(),
+    status: "Thinking...",
+  };
+  generations.set(chatId, generation);
 
   try {
     const settings = await storageService.getSettings();
+    const storedPrompt = settings?.chatSettings?.systemPrompt;
     const systemPrompt =
-      settings?.chatSettings?.systemPrompt ??
-      "You are a security-focused AI assistant helping with web application security testing in Caido.";
-    const maxMessages = settings?.chatSettings?.maxMessages ?? 25;
+      storedPrompt !== undefined && storedPrompt !== ""
+        ? storedPrompt
+        : DEFAULT_CHAT_SETTINGS.systemPrompt;
+    const maxMessages =
+      settings?.chatSettings?.maxMessages ?? DEFAULT_CHAT_SETTINGS.maxMessages;
 
-    const messagesToSend = currentMessages.slice(0, -1);
-    const limitedMessages = messagesToSend.slice(-maxMessages);
+    const limitedMessages = currentMessages
+      .slice(0, -1)
+      .filter((m) => m.role === "user" || m.content !== "")
+      .slice(-maxMessages);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const coreMessages: any[] = await Promise.all(
-      limitedMessages.map(async (msg) => {
-        let content = msg.content;
-        if (msg.role === "user") {
-          content = await resolveMessageContent(msg.content);
-          if (msg.files && msg.files.length > 0) {
-            const fileContents = msg.files
-              .map((f) => {
-                if (f.type.startsWith("image/")) {
-                  return `[Image: ${f.name}]`;
-                }
-                return `\n--- ${f.name} ---\n${f.content}\n---`;
-              })
-              .join("\n");
-            content += "\n\nAttached files:" + fileContents;
-          }
+    while (limitedMessages.at(-1)?.role === "assistant") {
+      limitedMessages.pop();
+    }
+    while (limitedMessages.at(0)?.role === "assistant") {
+      limitedMessages.shift();
+    }
+
+    if (limitedMessages.length === 0) {
+      throw new Error("No messages to send");
+    }
+
+    const coreMessages: ModelMessage[] = await Promise.all(
+      limitedMessages.map(async (msg): Promise<ModelMessage> => {
+        if (msg.role === "assistant") {
+          return { role: "assistant", content: msg.content };
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return { role: msg.role, content } as any;
+
+        let text = await resolveMessageContent(msg.content);
+        const files = msg.files ?? [];
+
+        if (files.length > 0) {
+          text +=
+            "\n\nAttached files:" +
+            files
+              .map((f) =>
+                f.type.startsWith("image/")
+                  ? `\n--- ${f.name} (image, could not be sent) ---`
+                  : `\n--- ${f.name} ---\n${f.content}\n---`,
+              )
+              .join("\n");
+        }
+
+        return { role: "user", content: text };
       }),
     );
 
-    abortController = new AbortController();
     const model = createModel(sdk, selectedModel.value);
-
-    currentStatus.value = "Thinking...";
 
     const result = streamText({
       model,
       system: systemPrompt,
       messages: coreMessages,
-      abortSignal: abortController.signal,
+      abortSignal: generation.controller.signal,
     });
 
     let hasContent = false;
@@ -429,54 +497,62 @@ const sendMessage = async () => {
     let reasoningStartTime: number | undefined;
 
     for await (const part of result.fullStream) {
-      if (part.type === "reasoning-delta") {
+      if (part.type === "error") {
+        throw part.error instanceof Error
+          ? part.error
+          : new Error(String(part.error));
+      } else if (part.type === "reasoning-delta") {
         if (!isReasoning) {
           isReasoning = true;
           reasoningStartTime = Date.now();
-          currentStatus.value = "Reasoning...";
+          generation.status = "Reasoning...";
         }
         reasoningContent += part.text;
-        currentMessages[assistantIndex]!.reasoning = reasoningContent;
+        assistantMessage.reasoning = reasoningContent;
 
         if (reasoningStartTime !== undefined) {
           const durationMs = Date.now() - reasoningStartTime;
-          currentMessages[assistantIndex]!.thinkingDuration = Math.round(
-            durationMs / 1000,
-          );
+          assistantMessage.thinkingDuration = Math.round(durationMs / 1000);
         }
       } else if (part.type === "text-delta") {
         if (isReasoning) {
           isReasoning = false;
-          currentStatus.value = "Writing...";
+          generation.status = "Writing...";
 
           if (reasoningStartTime !== undefined) {
             const durationMs = Date.now() - reasoningStartTime;
-            currentMessages[assistantIndex]!.thinkingDuration = Math.round(
-              durationMs / 1000,
-            );
+            assistantMessage.thinkingDuration = Math.round(durationMs / 1000);
           }
         }
-        currentMessages[assistantIndex]!.content += part.text;
+        assistantMessage.content += part.text;
         hasContent = true;
       }
     }
 
-    if (!hasContent && currentMessages[assistantIndex]!.content === "") {
-      currentMessages.splice(assistantIndex, 1);
-    } else {
-      await saveChatSession();
+    const warnings = (await result.warnings) ?? [];
+    if (warnings.length > 0) {
+      showToast(
+        sdk,
+        warnings.map((w) => ("message" in w ? w.message : w.type)).join("; "),
+        "error",
+      );
     }
+
+    if (!hasContent && assistantMessage.content === "") {
+      dropMessage(chatId, assistantMessage);
+    }
+    await persistHistory();
   } catch (error) {
     if ((error as Error).name === "AbortError") {
-      if (currentMessages[assistantIndex]!.content !== "") {
-        currentMessages[assistantIndex]!.content +=
-          "\n\n*[Generation stopped]*";
-        await saveChatSession();
+      if (assistantMessage.content !== "") {
+        assistantMessage.content += "\n\n*[Generation stopped]*";
       } else {
-        currentMessages.splice(assistantIndex, 1);
+        dropMessage(chatId, assistantMessage);
       }
+      await persistHistory();
     } else {
-      currentMessages.splice(assistantIndex, 1);
+      dropMessage(chatId, assistantMessage);
+      await persistHistory();
       const errorMessage = (error as Error).message;
 
       let userFriendlyError = "AI request failed";
@@ -506,21 +582,12 @@ const sendMessage = async () => {
       showToast(sdk, userFriendlyError, "error");
     }
   } finally {
-    isLoading.value = false;
-    isTyping.value = false;
-    currentStatus.value = "";
-    abortController = undefined;
+    generations.delete(chatId);
   }
 };
 
 const stopGeneration = () => {
-  if (abortController !== undefined) {
-    abortController.abort();
-    abortController = undefined;
-  }
-  isLoading.value = false;
-  isTyping.value = false;
-  currentStatus.value = "";
+  generations.get(currentChatId.value)?.controller.abort();
 };
 
 onMounted(async () => {
@@ -531,6 +598,9 @@ onMounted(async () => {
 
   const handleProjectChange = async (event: Event) => {
     isProjectChanging.value = true;
+    for (const generation of generations.values()) {
+      generation.controller.abort();
+    }
 
     const customEvent = event as CustomEvent<{
       projectId?: string;
@@ -538,7 +608,10 @@ onMounted(async () => {
     }>;
     const oldProjectId = customEvent?.detail?.oldProjectId;
 
-    if (currentMessages.length > 0 || chatHistory.length > 0) {
+    if (
+      autoSaveEnabled.value &&
+      (currentMessages.length > 0 || chatHistory.length > 0)
+    ) {
       if (oldProjectId !== undefined) {
         const tempHistory = [...chatHistory];
         if (currentMessages.length > 0) {
@@ -658,7 +731,7 @@ onMounted(async () => {
         v-model="currentMessage"
         :attached-files="attachedFiles"
         :is-loading="isLoading"
-        :is-typing="isTyping"
+        :is-typing="isLoading"
         :selected-provider="selectedProvider"
         :selected-model="selectedModel"
         :selected-module="selectedModule"

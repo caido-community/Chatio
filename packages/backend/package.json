@@ -6,8 +6,8 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@caido/sdk-backend": "^0.54.1",
-    "@types/node": "^20.0.0",
+    "@caido/sdk-backend": "0.57.1",
+    "@types/node": "20.14.9",
     "typescript": "5.5.4"
   }
 }

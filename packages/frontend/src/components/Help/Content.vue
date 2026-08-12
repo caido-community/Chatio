@@ -29,6 +29,13 @@ const aboutInfo = {
         OpenRouter, OpenAI, Anthropic Claude, and Google Gemini models.
       </p>
 
+      <div
+        class="bg-surface-800 border border-surface-700 rounded p-4 mb-4 text-sm text-surface-300"
+      >
+        <i class="fas fa-circle-exclamation text-primary-400 mr-2"></i>
+        Chatio requires <strong>Caido 0.57.0 or newer</strong>.
+      </div>
+
       <div class="border border-surface-700 rounded p-4">
         <h3 class="text-lg font-semibold mb-3">Quick Start</h3>
         <ol class="list-decimal list-inside space-y-2 text-surface-300">
@@ -70,21 +77,20 @@ const aboutInfo = {
             <div class="border-l-4 border-primary-400 pl-4">
               <h4 class="font-semibold">OpenAI</h4>
               <p class="text-surface-300 text-sm">
-                Direct access to GPT-4o, GPT-4o-mini, and other OpenAI models.
+                Direct access to GPT 5.5, GPT 5.4 and its Mini and Nano
+                variants, and GPT 5.3 Codex.
               </p>
             </div>
             <div class="border-l-4 border-primary-400 pl-4">
               <h4 class="font-semibold">Anthropic</h4>
               <p class="text-surface-300 text-sm">
-                Access to Claude 4 Sonnet, Claude 4 Opus, and other Anthropic
-                models.
+                Access to Claude Opus 4.8, Opus 4.7, Opus 4.6, and Sonnet 4.6.
               </p>
             </div>
             <div class="border-l-4 border-primary-400 pl-4">
               <h4 class="font-semibold">Google</h4>
               <p class="text-surface-300 text-sm">
-                Access to Gemini 2.5 Flash, Gemini 2.5 Pro, and other Google AI
-                models.
+                Access to Gemini 3.1 Pro and Gemini 3 Flash.
               </p>
             </div>
           </div>
@@ -129,16 +135,21 @@ const aboutInfo = {
         </div>
 
         <div class="border border-surface-700 rounded p-4">
-          <h3 class="text-lg font-semibold mb-3">File & Image Attachments</h3>
+          <h3 class="text-lg font-semibold mb-3">File Attachments</h3>
           <p class="text-surface-300 leading-relaxed mb-3">
-            Upload files or images for analysis:
+            Upload text files for analysis:
           </p>
           <ul class="list-disc list-inside space-y-1 text-surface-300 ml-4">
             <li>Source code files for security review</li>
-            <li>Screenshots and images (requires vision-capable models)</li>
             <li>Configuration files and documentation</li>
+            <li>HTTP requests and responses saved to disk</li>
             <li>Drag and drop or use the attachment button</li>
           </ul>
+          <p class="text-surface-400 text-sm mt-3">
+            Images cannot be attached. Caido's AI provider accepts only text, so
+            an image would never reach the model regardless of which provider or
+            model you pick.
+          </p>
         </div>
 
         <div class="border border-surface-700 rounded p-4">
@@ -155,8 +166,30 @@ const aboutInfo = {
           <p class="text-surface-300 leading-relaxed">
             Switch between AI providers and models on the fly. Each chat
             remembers its selected model, so you can use different models for
-            different analysis tasks.
+            different analysis tasks. Providers you have not configured in Caido
+            are greyed out in the picker.
           </p>
+        </div>
+
+        <div class="border border-surface-700 rounded p-4">
+          <h3 class="text-lg font-semibold mb-3">Reasoning Models</h3>
+          <p class="text-surface-300 leading-relaxed mb-3">
+            Models marked with a
+            <i class="fas fa-brain text-surface-400 text-xs"></i> icon think
+            before answering, and their reasoning is shown in a collapsible
+            section above the reply.
+          </p>
+          <ul class="list-disc list-inside space-y-1 text-surface-300 ml-4">
+            <li>
+              Through OpenRouter, Claude models come in both a standard and a
+              <strong>Thinking</strong> variant, so you can choose per task
+            </li>
+            <li>Gemini, Grok, DeepSeek and GPT models reason by default</li>
+            <li>
+              Reasoning is currently unavailable when using the OpenAI provider
+              directly. Use the same models through OpenRouter to enable it
+            </li>
+          </ul>
         </div>
 
         <div class="border border-surface-700 rounded p-4">
@@ -243,10 +276,12 @@ const aboutInfo = {
         </div>
 
         <div class="pb-4 border-b border-surface-700 last:border-b-0">
-          <h5 class="font-semibold mb-2">Images Not Working</h5>
+          <h5 class="font-semibold mb-2">Images Cannot Be Attached</h5>
           <p class="text-surface-300 text-sm">
-            Image analysis requires vision-capable models like GPT-4o, Claude 3,
-            or Gemini models. Make sure you're using a compatible model.
+            This is a Caido limitation, not a model one. Caido's AI provider
+            accepts only text and tool results, so image attachments are blocked
+            rather than silently dropped. Paste the relevant text or HTTP
+            request instead.
           </p>
         </div>
       </div>

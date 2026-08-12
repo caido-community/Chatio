@@ -101,7 +101,7 @@ const vTooltip = Tooltip;
                 <div class="flex items-center gap-2">
                   <span class="font-medium text-sm">{{ model.name }}</span>
                   <i
-                    v-if="model.isReasoningModel"
+                    v-if="model.capabilities.reasoning"
                     v-tooltip.top="'Reasoning Model'"
                     class="fas fa-brain text-surface-400 text-xs"
                   />

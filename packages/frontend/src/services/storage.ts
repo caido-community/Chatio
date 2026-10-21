@@ -1,15 +1,6 @@
 import type { ChatSession } from "../components/Chat/types";
 import { DEFAULT_CHAT_SETTINGS } from "../constants";
-import type {
-  ModelCapabilities,
-  ModelItem,
-  ModelUserConfig,
-} from "../stores/models";
 import type { FrontendSDK } from "../types";
-
-type StoredModel = Omit<ModelItem, "capabilities"> & {
-  capabilities?: ModelCapabilities;
-};
 
 interface ChatSettings {
   systemPrompt?: string;
@@ -40,8 +31,6 @@ interface GlobalStorageData {
       systemPrompt: string;
       autoSave: boolean;
     };
-    modelConfigs?: Record<string, ModelUserConfig>;
-    customModels?: StoredModel[];
   };
   projects?: Record<string, ProjectStorageData>;
 }
@@ -206,39 +195,7 @@ class CaidoStorageService {
     if (this.cache.globalSettings !== undefined) {
       delete this.cache.globalSettings.providers;
       delete this.cache.globalSettings.chatSettings;
-      delete this.cache.globalSettings.modelConfigs;
-      delete this.cache.globalSettings.customModels;
     }
-    await this.saveToStorage();
-  }
-
-  async getModelConfigs(): Promise<Record<string, ModelUserConfig>> {
-    await this.waitForInitialization();
-    return this.cache.globalSettings?.modelConfigs ?? {};
-  }
-
-  async setModelConfigs(
-    configs: Record<string, ModelUserConfig>,
-  ): Promise<void> {
-    await this.waitForInitialization();
-    if (this.cache.globalSettings === undefined) this.cache.globalSettings = {};
-    this.cache.globalSettings.modelConfigs = configs;
-    await this.saveToStorage();
-  }
-
-  async getCustomModels(): Promise<ModelItem[]> {
-    await this.waitForInitialization();
-    const stored = this.cache.globalSettings?.customModels ?? [];
-    return stored.map((model) => ({
-      ...model,
-      capabilities: model.capabilities ?? { reasoning: false },
-    }));
-  }
-
-  async setCustomModels(models: ModelItem[]): Promise<void> {
-    await this.waitForInitialization();
-    if (this.cache.globalSettings === undefined) this.cache.globalSettings = {};
-    this.cache.globalSettings.customModels = models;
     await this.saveToStorage();
   }
 

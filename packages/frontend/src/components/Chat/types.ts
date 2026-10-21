@@ -44,6 +44,36 @@ export function formatDate(date: Date): string {
   return d.toLocaleDateString();
 }
 
+type ChatSelection = Pick<
+  ChatSession,
+  "selectedProvider" | "selectedModel" | "selectedModule"
+>;
+
+type SelectionPair = Pick<ChatSession, "selectedProvider" | "selectedModel">;
+
+export function chatSelection(chat: SelectionPair, preferred?: SelectionPair) {
+  for (const s of [preferred, chat]) {
+    if (s?.selectedProvider !== undefined && s.selectedModel !== undefined) {
+      return {
+        selectedProvider: s.selectedProvider,
+        selectedModel: s.selectedModel,
+      };
+    }
+  }
+  return undefined;
+}
+
+export function updateChatSelection(
+  history: ChatSession[],
+  chatId: string,
+  selection: ChatSelection,
+): boolean {
+  const session = history.find((c) => c.id === chatId);
+  if (session === undefined) return false;
+  Object.assign(session, selection);
+  return true;
+}
+
 export function generateChatId(): string {
   return `chat_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }

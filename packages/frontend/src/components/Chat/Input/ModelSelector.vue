@@ -1,112 +1,58 @@
 <script setup lang="ts">
+import type { AIUpstreamModel } from "@caido/sdk-frontend";
 import { onClickOutside } from "@vueuse/core";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
-import {
-  defaultModels,
-  type ModelItem,
-  Provider,
-  providers as providersList,
-} from "@/stores/models";
-import { getProviderStatuses } from "@/utils/ai";
+import { useModels } from "@/stores/models";
 
-const { customModels = [] } = defineProps<{
-  customModels?: ModelItem[];
+const { selected } = defineProps<{
+  selected: AIUpstreamModel | undefined;
 }>();
-
-const sdk = useSDK();
-
-const modelValue = defineModel<string>();
 
 const emit = defineEmits<{
-  select: [provider: string, modelId: string, modelName: string];
+  select: [model: AIUpstreamModel];
 }>();
+
+const { models, providers } = useModels(useSDK());
 
 const isOpen = ref(false);
 const containerRef = ref<HTMLElement>();
-const activeProvider = ref<Provider>(Provider.OpenRouter);
-
-const allModels = computed(() => [...defaultModels, ...(customModels ?? [])]);
+const activeProvider = ref(selected?.providerId);
 
 onClickOutside(containerRef, () => {
   isOpen.value = false;
 });
 
-const providerStatuses = ref(new Map<string, boolean>());
-
-const refreshProviderStatuses = () => {
-  providerStatuses.value = new Map(
-    getProviderStatuses(sdk).map((s) => [s.id, s.isConfigured]),
-  );
-};
-
-onMounted(refreshProviderStatuses);
-
 const toggle = () => {
   isOpen.value = !isOpen.value;
-  if (isOpen.value) {
-    refreshProviderStatuses();
+  if (!providers.value.some((p) => p.id === activeProvider.value)) {
+    activeProvider.value = selected?.providerId ?? providers.value[0]?.id;
   }
 };
 
-const providerIdMap: Record<Provider, string> = {
-  [Provider.OpenRouter]: "openrouter",
-  [Provider.OpenAI]: "openai",
-  [Provider.Anthropic]: "anthropic",
-  [Provider.Google]: "google",
-};
+const selectedKey = computed(() => selected?.modelId);
 
-const isProviderConfigured = (provider: Provider): boolean => {
-  const sdkId = providerIdMap[provider];
-  return providerStatuses.value.get(sdkId) ?? false;
-};
+const selectedProvider = computed(() =>
+  providers.value.find((p) => p.id === selected?.providerId),
+);
 
-const providersWithStatus = computed(() => {
-  return providersList
-    .map((p) => ({
-      ...p,
-      isConfigured: isProviderConfigured(p.id),
-    }))
-    .sort((a, b) => {
-      if (a.isConfigured !== b.isConfigured) {
-        return a.isConfigured ? -1 : 1;
-      }
-      return 0;
-    });
-});
+const modelsForProvider = computed(() =>
+  models.value.filter((m) => m.providerId === activeProvider.value),
+);
 
-const modelsForProvider = computed(() => {
-  return allModels.value
-    .filter((m) => m.provider === activeProvider.value)
-    .map((m) => ({
-      ...m,
-      isConfigured: isProviderConfigured(m.provider),
-    }));
-});
+const supportsReasoning = (model: AIUpstreamModel) =>
+  model.support.reasoning !== "UNSUPPORTED";
 
-const selectedModel = computed(() => {
-  return allModels.value.find((m) => m.id === modelValue.value);
-});
+watch(
+  () => selected?.providerId,
+  (providerId) => {
+    if (providerId !== undefined) activeProvider.value = providerId;
+  },
+);
 
-watch(selectedModel, (model) => {
-  if (model) {
-    activeProvider.value = model.provider;
-  }
-});
-
-const handleProviderClick = (provider: {
-  id: Provider;
-  isConfigured: boolean;
-}) => {
-  if (!provider.isConfigured) return;
-  activeProvider.value = provider.id;
-};
-
-const handleSelect = (model: ModelItem & { isConfigured: boolean }) => {
-  if (!model.isConfigured) return;
-  modelValue.value = model.id;
-  emit("select", model.provider, model.id, model.name);
+const handleSelect = (model: AIUpstreamModel) => {
+  emit("select", model);
   isOpen.value = false;
 };
 </script>
@@ -119,27 +65,18 @@ const handleSelect = (model: ModelItem & { isConfigured: boolean }) => {
       @click="toggle"
     >
       <component
-        :is="selectedModel?.icon"
-        v-if="selectedModel?.icon"
-        class="h-4 w-4"
-      />
-      <component
-        :is="
-          providersWithStatus.find((p) => p.id === selectedModel?.provider)
-            ?.icon
-        "
-        v-else-if="
-          selectedModel &&
-          providersWithStatus.find((p) => p.id === selectedModel?.provider)
-            ?.icon
-        "
+        :is="selectedProvider?.icon"
+        v-if="selectedProvider?.icon"
         class="h-4 w-4"
       />
       <span class="truncate max-w-[160px]">
-        {{ selectedModel?.name ?? "Select model" }}
+        {{
+          selected?.displayName ??
+          (models.length === 0 ? "No models available" : "Select model")
+        }}
       </span>
       <i
-        v-if="selectedModel?.capabilities.reasoning"
+        v-if="selected && supportsReasoning(selected)"
         class="fas fa-brain text-xs text-surface-500"
       />
       <i
@@ -162,107 +99,83 @@ const handleSelect = (model: ModelItem & { isConfigured: boolean }) => {
         v-if="isOpen"
         class="absolute left-0 bottom-full mb-1 z-[10001] flex h-52 w-80 flex-row overflow-hidden rounded-lg border border-surface-700 bg-surface-900 shadow-xl"
       >
-        <!-- Providers Panel -->
         <div
-          class="flex w-28 flex-col overflow-y-auto border-r border-surface-700 bg-surface-800/30"
+          v-if="providers.length === 0"
+          class="flex flex-1 items-center justify-center px-4 text-center text-sm text-surface-500"
         >
-          <button
-            v-for="provider in providersWithStatus"
-            :key="provider.id"
-            v-tooltip.left="
-              provider.isConfigured
-                ? undefined
-                : `${provider.name} is not configured`
-            "
-            type="button"
-            :disabled="!provider.isConfigured"
-            :class="[
-              'group relative flex items-center gap-2 px-2.5 py-2 text-left text-sm transition-colors',
-              !provider.isConfigured
-                ? 'cursor-not-allowed text-surface-500'
-                : activeProvider === provider.id
-                  ? 'bg-surface-700/50 text-surface-100 font-medium'
-                  : 'text-surface-400 hover:bg-surface-800 hover:text-surface-200',
-            ]"
-            @click="handleProviderClick(provider)"
-          >
-            <component :is="provider.icon" class="h-4 w-4 shrink-0" />
-            <span class="truncate flex-1">{{ provider.name }}</span>
-            <i
-              v-if="!provider.isConfigured"
-              class="fas fa-exclamation-circle text-[10px] text-surface-600"
-            />
-            <div
-              v-if="activeProvider === provider.id && provider.isConfigured"
-              class="absolute left-0 top-0 bottom-0 w-0.5 bg-primary-500"
-            />
-          </button>
+          No AI providers configured. Add one in Caido Settings → AI.
         </div>
 
-        <!-- Models Panel -->
-        <div class="flex flex-1 flex-col overflow-y-auto bg-surface-900">
-          <div v-if="modelsForProvider.length > 0" class="flex flex-col py-1">
+        <template v-else>
+          <!-- Providers Panel -->
+          <div
+            class="flex w-28 flex-col overflow-y-auto border-r border-surface-700 bg-surface-800/30"
+          >
             <button
-              v-for="model in modelsForProvider"
-              :key="model.id"
-              v-tooltip.right="
-                model.isConfigured
-                  ? undefined
-                  : `${providersWithStatus.find((p) => p.id === model.provider)?.name} is not configured`
-              "
+              v-for="provider in providers"
+              :key="provider.id"
               type="button"
-              :disabled="!model.isConfigured"
               :class="[
-                'w-full truncate px-3 py-1.5 text-left text-sm transition-colors',
-                !model.isConfigured
-                  ? 'cursor-not-allowed text-surface-600'
-                  : model.id === modelValue
-                    ? 'bg-surface-700 text-surface-100'
-                    : 'text-surface-300 hover:bg-surface-800 hover:text-surface-100',
+                'group relative flex items-center gap-2 px-2.5 py-2 text-left text-sm transition-colors',
+                activeProvider === provider.id
+                  ? 'bg-surface-700/50 text-surface-100 font-medium'
+                  : 'text-surface-400 hover:bg-surface-800 hover:text-surface-200',
               ]"
-              @click="handleSelect(model)"
+              @click="activeProvider = provider.id"
             >
-              <div class="flex items-center gap-2">
-                <component
-                  :is="model.icon"
-                  v-if="model.icon"
-                  class="h-4 w-4 shrink-0"
-                />
-                <component
-                  :is="
-                    providersWithStatus.find((p) => p.id === model.provider)
-                      ?.icon
-                  "
-                  v-else
-                  class="h-4 w-4 shrink-0"
-                />
-                <span class="truncate flex-1">{{ model.name }}</span>
-                <div class="flex items-center gap-1.5 shrink-0 ml-1">
-                  <i
-                    v-if="model.capabilities.reasoning"
-                    v-tooltip.right="'Reasoning Model'"
-                    class="fas fa-brain text-[10px] text-surface-500"
-                  />
-                  <i
-                    v-if="!model.isConfigured"
-                    class="fas fa-exclamation-circle text-[10px] text-surface-500"
-                  />
-                  <i
-                    v-else-if="model.id === modelValue"
-                    class="fas fa-check text-xs text-surface-100"
-                  />
-                </div>
-              </div>
+              <component
+                :is="provider.icon"
+                v-if="provider.icon"
+                class="h-4 w-4 shrink-0"
+              />
+              <span class="truncate flex-1">{{ provider.label }}</span>
+              <div
+                v-if="activeProvider === provider.id"
+                class="absolute left-0 top-0 bottom-0 w-0.5 bg-primary-500"
+              />
             </button>
           </div>
 
-          <div
-            v-else
-            class="flex flex-1 items-center justify-center px-4 text-center text-sm text-surface-500"
-          >
-            No models available
+          <!-- Models Panel -->
+          <div class="flex flex-1 flex-col overflow-y-auto bg-surface-900">
+            <div v-if="modelsForProvider.length > 0" class="flex flex-col py-1">
+              <button
+                v-for="model in modelsForProvider"
+                :key="model.modelId"
+                type="button"
+                :class="[
+                  'w-full truncate px-3 py-1.5 text-left text-sm transition-colors',
+                  model.modelId === selectedKey
+                    ? 'bg-surface-700 text-surface-100'
+                    : 'text-surface-300 hover:bg-surface-800 hover:text-surface-100',
+                ]"
+                @click="handleSelect(model)"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="truncate flex-1">{{ model.displayName }}</span>
+                  <div class="flex items-center gap-1.5 shrink-0 ml-1">
+                    <i
+                      v-if="supportsReasoning(model)"
+                      v-tooltip.right="'Reasoning Model'"
+                      class="fas fa-brain text-[10px] text-surface-500"
+                    />
+                    <i
+                      v-if="model.modelId === selectedKey"
+                      class="fas fa-check text-xs text-surface-100"
+                    />
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div
+              v-else
+              class="flex flex-1 items-center justify-center px-4 text-center text-sm text-surface-500"
+            >
+              No models available
+            </div>
           </div>
-        </div>
+        </template>
       </div>
     </Transition>
   </div>

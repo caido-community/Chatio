@@ -25,23 +25,23 @@ const aboutInfo = {
         guidance directly within your testing workflow.
       </p>
       <p class="text-surface-300 leading-relaxed mb-6">
-        Chatio leverages Caido's built-in AI provider system, supporting
-        OpenRouter, OpenAI, Anthropic Claude, and Google Gemini models.
+        Chatio leverages Caido's built-in AI provider system, so every provider
+        and model you configure in Caido is available in Chatio.
       </p>
 
       <div
         class="bg-surface-800 border border-surface-700 rounded p-4 mb-4 text-sm text-surface-300"
       >
         <i class="fas fa-circle-exclamation text-primary-400 mr-2"></i>
-        Chatio requires <strong>Caido 0.57.0 or newer</strong>.
+        Chatio requires <strong>Caido 0.59.0 or newer</strong>.
       </div>
 
       <div class="border border-surface-700 rounded p-4">
         <h3 class="text-lg font-semibold mb-3">Quick Start</h3>
         <ol class="list-decimal list-inside space-y-2 text-surface-300">
           <li>
-            Go to <strong>Caido Settings → AI</strong> to configure your API
-            keys
+            Go to <strong>Caido Settings → AI</strong> to configure your
+            providers
           </li>
           <li>
             Select your preferred AI provider and model from the chat input
@@ -59,49 +59,28 @@ const aboutInfo = {
     <section id="configuration">
       <h2 class="text-2xl font-semibold mb-4">Configuration</h2>
       <p class="text-surface-300 leading-relaxed mb-6">
-        Chatio uses Caido's AI SDK for provider management. Configure your API
-        keys in Caido's settings.
+        Chatio uses Caido's AI SDK for provider and model management. Configure
+        your providers in Caido's settings.
       </p>
 
       <div class="space-y-4">
         <div class="border border-surface-700 rounded p-4">
-          <h3 class="text-lg font-semibold mb-3">Supported Providers</h3>
-          <div class="space-y-3">
-            <div class="border-l-4 border-primary-400 pl-4">
-              <h4 class="font-semibold">OpenRouter</h4>
-              <p class="text-surface-300 text-sm">
-                Access multiple AI models through a single API key. Includes
-                Claude, GPT, Gemini, and more.
-              </p>
-            </div>
-            <div class="border-l-4 border-primary-400 pl-4">
-              <h4 class="font-semibold">OpenAI</h4>
-              <p class="text-surface-300 text-sm">
-                Direct access to GPT 5.5, GPT 5.4 and its Mini and Nano
-                variants, and GPT 5.3 Codex.
-              </p>
-            </div>
-            <div class="border-l-4 border-primary-400 pl-4">
-              <h4 class="font-semibold">Anthropic</h4>
-              <p class="text-surface-300 text-sm">
-                Access to Claude Opus 4.8, Opus 4.7, Opus 4.6, and Sonnet 4.6.
-              </p>
-            </div>
-            <div class="border-l-4 border-primary-400 pl-4">
-              <h4 class="font-semibold">Google</h4>
-              <p class="text-surface-300 text-sm">
-                Access to Gemini 3.1 Pro and Gemini 3 Flash.
-              </p>
-            </div>
-          </div>
+          <h3 class="text-lg font-semibold mb-3">Providers and Models</h3>
+          <p class="text-surface-300 text-sm">
+            Caido owns the list of providers and models. Any provider you add in
+            Caido, such as OpenRouter, OpenAI, Anthropic, Gemini or a custom
+            endpoint, shows up in the model picker with the models Caido makes
+            available for it. The <strong>Providers</strong> tab in Chatio's
+            settings lists what is currently configured.
+          </p>
         </div>
 
         <div class="bg-surface-800 border border-surface-700 rounded p-4">
           <p class="text-surface-300 text-sm">
             <i class="fas fa-info-circle text-primary-400 mr-2"></i>
             <strong>How to Configure:</strong> Go to
-            <strong>Caido Settings → AI</strong> and add your API key for your
-            preferred provider.
+            <strong>Caido Settings → AI</strong> and add your preferred
+            provider.
           </p>
         </div>
       </div>
@@ -166,8 +145,8 @@ const aboutInfo = {
           <p class="text-surface-300 leading-relaxed">
             Switch between AI providers and models on the fly. Each chat
             remembers its selected model, so you can use different models for
-            different analysis tasks. Providers you have not configured in Caido
-            are greyed out in the picker.
+            different analysis tasks. If a chat's model is removed from Caido,
+            Chatio switches it to an available model.
           </p>
         </div>
 
@@ -179,17 +158,11 @@ const aboutInfo = {
             before answering, and their reasoning is shown in a collapsible
             section above the reply.
           </p>
-          <ul class="list-disc list-inside space-y-1 text-surface-300 ml-4">
-            <li>
-              Through OpenRouter, Claude models come in both a standard and a
-              <strong>Thinking</strong> variant, so you can choose per task
-            </li>
-            <li>Gemini, Grok, DeepSeek and GPT models reason by default</li>
-            <li>
-              Reasoning is currently unavailable when using the OpenAI provider
-              directly. Use the same models through OpenRouter to enable it
-            </li>
-          </ul>
+          <p class="text-surface-300 leading-relaxed">
+            Chatio requests a medium reasoning effort, adjusted to what the
+            model supports in Caido, and skips reasoning for models that do not
+            support it.
+          </p>
         </div>
 
         <div class="border border-surface-700 rounded p-4">
@@ -271,7 +244,8 @@ const aboutInfo = {
           <h5 class="font-semibold mb-2">Model Not Available</h5>
           <p class="text-surface-300 text-sm">
             Some models require specific API access. Check that your provider
-            account has access to the selected model.
+            account has access to the selected model, and that the model is
+            still available in <strong>Caido Settings → AI</strong>.
           </p>
         </div>
 

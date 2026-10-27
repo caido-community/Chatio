@@ -1,38 +1,24 @@
 <script setup lang="ts">
+import type { AIUpstreamModel } from "@caido/sdk-frontend";
 import Button from "primevue/button";
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import type { AttachedFile } from "../types";
 
 import ModelSelector from "./ModelSelector.vue";
 
 import { useSDK } from "@/plugins/sdk";
-import { useStorage } from "@/services/storage";
-import {
-  defaultEnabledModels,
-  defaultModels,
-  type ModelItem,
-  type ModelUserConfig,
-  Provider,
-} from "@/stores/models";
 
 interface ReplaySession {
   id: string;
   name: string;
 }
 
-const {
-  modelValue,
-  attachedFiles,
-  isLoading,
-  selectedProvider,
-  selectedModel,
-} = defineProps<{
+const { modelValue, attachedFiles, isLoading, selectedModel } = defineProps<{
   modelValue: string;
   attachedFiles: AttachedFile[];
   isLoading: boolean;
-  selectedProvider: string;
-  selectedModel: string;
+  selectedModel: AIUpstreamModel | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -42,11 +28,10 @@ const emit = defineEmits<{
   attachFiles: [files: FileList];
   removeFile: [index: number];
   openImage: [file: AttachedFile];
-  selectModel: [provider: string, model: string, displayName: string];
+  selectModel: [model: AIUpstreamModel];
 }>();
 
 const sdk = useSDK();
-const storageService = useStorage(sdk);
 const fileInputRef = ref<HTMLInputElement>();
 const textareaRef = ref<HTMLTextAreaElement>();
 const isDragOver = ref(false);
@@ -55,12 +40,6 @@ const showMentions = ref(false);
 const replaySessions = ref<ReplaySession[]>([]);
 const mentionQuery = ref("");
 const selectedMentionIndex = ref(0);
-
-const models = ref<ModelItem[]>([]);
-const modelConfigs = ref<Record<string, ModelUserConfig>>({});
-const customModels = ref<ModelItem[]>([]);
-const selectedModelId = ref("");
-const localSelectedProvider = ref<Provider>(Provider.OpenRouter);
 
 const filteredSessions = computed(() => {
   if (mentionQuery.value === "") return replaySessions.value;
@@ -78,139 +57,6 @@ const loadReplaySessions = () => {
     // Silent fail
   }
 };
-
-const loadModels = async () => {
-  const settings = await storageService.getAppState();
-  const savedProvider = settings?.selectedProvider;
-  const savedModel = settings?.selectedModel;
-
-  modelConfigs.value = await storageService.getModelConfigs();
-  customModels.value = await storageService.getCustomModels();
-
-  const allModels = [...defaultModels, ...customModels.value];
-
-  const getEnabledModels = (provider: Provider): ModelItem[] => {
-    return allModels.filter((m) => {
-      if (m.provider !== provider) return false;
-      const config = modelConfigs.value[m.id];
-      return config !== undefined
-        ? config.enabled
-        : defaultEnabledModels.has(m.id);
-    });
-  };
-
-  if (
-    savedProvider !== undefined &&
-    Object.values(Provider as Record<string, string>).includes(savedProvider)
-  ) {
-    localSelectedProvider.value = savedProvider as Provider;
-  }
-
-  models.value = getEnabledModels(localSelectedProvider.value);
-
-  if (
-    savedModel !== undefined &&
-    models.value.find((m) => m.id === savedModel)
-  ) {
-    selectedModelId.value = savedModel;
-    const model = models.value.find((m) => m.id === savedModel);
-    if (model) {
-      emit("selectModel", model.provider, model.id, model.name);
-    }
-  } else if (selectedModel !== "") {
-    selectedModelId.value = selectedModel;
-    let model = models.value.find((m) => m.id === selectedModel);
-    if (!model) {
-      model = allModels.find((m) => m.id === selectedModel);
-      if (model && model.provider !== localSelectedProvider.value) {
-        localSelectedProvider.value = model.provider;
-        models.value = getEnabledModelsForProvider(model.provider);
-      }
-    }
-    if (model) {
-      emit("selectModel", model.provider, model.id, model.name);
-    }
-  } else if (models.value.length > 0 && models.value[0]) {
-    selectedModelId.value = models.value[0].id;
-    emit(
-      "selectModel",
-      models.value[0].provider,
-      models.value[0].id,
-      models.value[0].name,
-    );
-  }
-};
-
-const getEnabledModelsForProvider = (provider: Provider): ModelItem[] => {
-  const allModels = [...defaultModels, ...customModels.value];
-  return allModels.filter((m) => {
-    if (m.provider !== provider) return false;
-    const config = modelConfigs.value[m.id];
-    return config !== undefined
-      ? config.enabled
-      : defaultEnabledModels.has(m.id);
-  });
-};
-
-const handleModelSelect = async (
-  provider: string,
-  modelId: string,
-  modelName: string,
-) => {
-  selectedModelId.value = modelId;
-  localSelectedProvider.value = provider as Provider;
-  emit("selectModel", provider, modelId, modelName);
-
-  await storageService.setAppState({
-    activeChatId: "",
-    selectedProvider: provider,
-    selectedModel: modelId,
-  });
-};
-
-watch(
-  () => selectedModel,
-  (newModel) => {
-    if (newModel !== "" && newModel !== selectedModelId.value) {
-      selectedModelId.value = newModel;
-      const allModels = [...defaultModels, ...customModels.value];
-      const model = allModels.find((m) => m.id === newModel);
-      if (model && model.provider !== localSelectedProvider.value) {
-        localSelectedProvider.value = model.provider;
-        models.value = getEnabledModelsForProvider(model.provider);
-      }
-    }
-  },
-  { immediate: true },
-);
-
-watch(
-  () => selectedProvider,
-  (newProvider) => {
-    if (newProvider !== "" && newProvider !== localSelectedProvider.value) {
-      const provider = newProvider as Provider;
-      if (
-        Object.values(Provider as Record<string, string>).includes(provider)
-      ) {
-        localSelectedProvider.value = provider;
-        models.value = getEnabledModelsForProvider(provider);
-      }
-    }
-  },
-  { immediate: true },
-);
-
-watch(selectedModelId, async (newId) => {
-  const model = models.value.find((m: ModelItem) => m.id === newId);
-  if (model) {
-    emit("selectModel", model.provider, model.id, model.name);
-    await storageService.setAppState({
-      activeChatId: "",
-      selectedProvider: localSelectedProvider.value,
-      selectedModel: newId,
-    });
-  }
-});
 
 const handleInput = (e: Event) => {
   const value = (e.target as HTMLTextAreaElement).value;
@@ -317,18 +163,7 @@ watch(
 
 onMounted(() => {
   loadReplaySessions();
-  loadModels();
   textareaRef.value?.focus();
-
-  const handleProjectChange = async () => {
-    await new Promise((r) => setTimeout(r, 50));
-    await loadModels();
-  };
-  window.addEventListener("chatio-project-changed", handleProjectChange);
-
-  onUnmounted(() => {
-    window.removeEventListener("chatio-project-changed", handleProjectChange);
-  });
 });
 </script>
 
@@ -445,9 +280,8 @@ onMounted(() => {
       <div class="flex gap-2 items-center min-w-0">
         <div class="flex gap-2 shrink-0">
           <ModelSelector
-            v-model="selectedModelId"
-            :custom-models="customModels"
-            @select="handleModelSelect"
+            :selected="selectedModel"
+            @select="emit('selectModel', $event)"
           />
         </div>
 

@@ -6,7 +6,6 @@ import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 
 import { ChatSettings } from "./Chat";
 import { DataManagement } from "./Data";
-import { ModelsSettings } from "./Models";
 import { Providers } from "./Providers";
 
 import { DEFAULT_CHAT_SETTINGS } from "@/constants";
@@ -14,14 +13,13 @@ import { useSDK } from "@/plugins/sdk";
 import { useStorage } from "@/services/storage";
 import { showToast } from "@/services/utils";
 
-type Tab = "Chat" | "Providers" | "Models" | "Data";
+type Tab = "Chat" | "Providers" | "Data";
 
 const activeTab = ref<Tab>("Chat");
 
 const tabs = [
   { label: "Chat", value: "Chat" },
   { label: "Providers", value: "Providers" },
-  { label: "Models", value: "Models" },
   { label: "Data", value: "Data" },
 ];
 
@@ -29,8 +27,6 @@ const component = computed(() => {
   switch (activeTab.value) {
     case "Providers":
       return Providers;
-    case "Models":
-      return ModelsSettings;
     case "Chat":
       return ChatSettings;
     case "Data":
@@ -183,12 +179,7 @@ onMounted(() => {
       }"
     >
       <template #content>
-        <div
-          class="flex-1 min-h-0"
-          :class="[
-            activeTab === 'Models' ? 'overflow-hidden' : 'overflow-auto',
-          ]"
-        >
+        <div class="flex-1 min-h-0 overflow-auto">
           <component
             :is="component"
             :providers="providers"

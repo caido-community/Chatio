@@ -51,18 +51,13 @@ const exportChatHistory = async () => {
   }
 };
 
-const exportSettings = async () => {
+const exportSettings = () => {
   try {
-    const modelConfigs = await storageService.getModelConfigs();
-    const customModels = await storageService.getCustomModels();
-
     downloadFile(
       JSON.stringify(
         {
           providers: providers.value,
           chatSettings: chatSettings.value,
-          modelConfigs,
-          customModels,
           version: "2.0.0",
         },
         undefined,
@@ -98,13 +93,6 @@ const importSettings = () => {
       }
       Object.assign(providers.value, imported.providers);
       Object.assign(chatSettings.value, imported.chatSettings);
-
-      if (imported.modelConfigs !== undefined) {
-        await storageService.setModelConfigs(imported.modelConfigs);
-      }
-      if (imported.customModels !== undefined) {
-        await storageService.setCustomModels(imported.customModels);
-      }
 
       showToast(sdk, "Settings imported! Click Save to apply.", "success");
 

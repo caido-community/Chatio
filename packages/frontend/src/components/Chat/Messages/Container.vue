@@ -7,7 +7,9 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import type { AttachedFile, Message } from "../types";
 
 import { Markdown } from "@/components/Markdown";
-import { getModelById } from "@/stores/models";
+import { useSDK } from "@/plugins/sdk";
+import { useModels } from "@/stores/models";
+import { findModel } from "@/utils/ai";
 
 const { messages, isLoading, currentStatus, welcomePrompts } = defineProps<{
   messages: Message[];
@@ -23,6 +25,8 @@ const emit = defineEmits<{
   openImage: [file: AttachedFile, sourceFiles?: AttachedFile[]];
   clickMention: [mentionId: string];
 }>();
+
+const { models, providers } = useModels(useSDK());
 
 const containerRef = ref<HTMLElement>();
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>();
@@ -88,16 +92,19 @@ watch(
 
 onMounted(() => scrollToBottom());
 
-const getModelName = (modelId: string | undefined): string => {
-  if (modelId === undefined || modelId === "") return "";
-  const model = getModelById(modelId);
-  return model?.name ?? modelId.split("/").pop() ?? modelId;
+const getMessageModel = (message: Message) =>
+  findModel(models.value, message.provider ?? "", message.model ?? "");
+
+const getModelName = (message: Message): string => {
+  const modelId = message.model ?? "";
+  return (
+    getMessageModel(message)?.displayName ?? modelId.split("/").pop() ?? modelId
+  );
 };
 
-const getModelIcon = (modelId: string | undefined) => {
-  if (modelId === undefined || modelId === "") return undefined;
-  const model = getModelById(modelId);
-  return model?.icon;
+const getModelIcon = (message: Message) => {
+  const providerId = getMessageModel(message)?.providerId ?? message.provider;
+  return providers.value.find((p) => p.id === providerId)?.icon;
 };
 
 const handleContentClick = (event: MouseEvent) => {
@@ -194,8 +201,8 @@ const showContextMenu = (event: MouseEvent, index: number) => {
             >
               <i v-if="message.role === 'user'" class="fas fa-user text-xs" />
               <component
-                :is="getModelIcon(message.model)"
-                v-else-if="getModelIcon(message.model)"
+                :is="getModelIcon(message)"
+                v-else-if="getModelIcon(message)"
                 class="w-4 h-4"
               />
               <i v-else class="fas fa-robot text-xs" />
@@ -213,7 +220,7 @@ const showContextMenu = (event: MouseEvent, index: number) => {
                 v-if="message.role === 'assistant' && message.model"
                 class="text-xs text-surface-500 mb-1"
               >
-                {{ getModelName(message.model) }}
+                {{ getModelName(message) }}
               </div>
               <div
                 v-if="message.files && message.files.length > 0"

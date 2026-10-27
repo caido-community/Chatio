@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AIUpstreamModel } from "@caido/sdk-frontend";
 import { type ModelMessage, streamText } from "ai";
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 
@@ -8,7 +9,7 @@ import { History } from "./History";
 import { Input } from "./Input";
 import { Messages } from "./Messages";
 import type { AttachedFile, ChatSession, Message } from "./types";
-import { generateChatId } from "./types";
+import { chatSelection, generateChatId, updateChatSelection } from "./types";
 
 import {
   DEFAULT_CHAT_SETTINGS,
@@ -18,10 +19,12 @@ import {
 import { useSDK } from "@/plugins/sdk";
 import { useStorage } from "@/services/storage";
 import { showToast } from "@/services/utils";
-import { createModel } from "@/utils/ai";
+import { useModels } from "@/stores/models";
+import { createModel, resolveModel } from "@/utils/ai";
 
 const sdk = useSDK();
 const storageService = useStorage(sdk);
+const { models } = useModels(sdk);
 
 type Generation = {
   controller: AbortController;
@@ -49,7 +52,16 @@ const editingTitle = ref("");
 
 const selectedProvider = ref("");
 const selectedModel = ref("");
-const selectedModule = ref("");
+const activeModel = computed(() =>
+  resolveModel(models.value, selectedProvider.value, selectedModel.value),
+);
+
+const selection = () => ({
+  selectedProvider:
+    activeModel.value?.providerId ?? (selectedProvider.value || undefined),
+  selectedModel: activeModel.value?.id ?? (selectedModel.value || undefined),
+  selectedModule: activeModel.value?.displayName,
+});
 
 const imageModal = reactive({
   show: false,
@@ -80,25 +92,30 @@ const loadChatHistory = async () => {
 
 const loadLastActiveChat = async () => {
   const appState = await storageService.getAppState();
+  selectedProvider.value = appState?.selectedProvider ?? "";
+  selectedModel.value = appState?.selectedModel ?? "";
   if (appState?.activeChatId !== undefined && appState.activeChatId !== "") {
-    await loadChat(appState.activeChatId);
+    await loadChat(appState.activeChatId, appState);
   } else if (chatHistory.length > 0 && chatHistory[0] !== undefined) {
     await loadChat(chatHistory[0].id);
   }
 };
 
-const loadChat = async (chatId: string) => {
+const loadChat = async (
+  chatId: string,
+  preferred?: Pick<ChatSession, "selectedProvider" | "selectedModel">,
+) => {
   const chat = chatHistory.find((c) => c.id === chatId);
   if (chat !== undefined) {
     currentChatId.value = chat.id;
     currentMessages.splice(0, currentMessages.length, ...chat.messages);
 
-    if (chat.selectedProvider !== undefined)
-      selectedProvider.value = chat.selectedProvider;
-    if (chat.selectedModel !== undefined)
-      selectedModel.value = chat.selectedModel;
-    if (chat.selectedModule !== undefined)
-      selectedModule.value = chat.selectedModule;
+    const pair = chatSelection(chat, preferred);
+    if (pair !== undefined) {
+      selectedProvider.value = pair.selectedProvider;
+      selectedModel.value = pair.selectedModel;
+      Object.assign(chat, pair);
+    }
     await saveAppState();
   }
 };
@@ -168,10 +185,7 @@ const upsertSession = () => {
     messages: [...currentMessages],
     timestamp: new Date(),
     messageCount: currentMessages.length,
-
-    selectedProvider: selectedProvider.value || undefined,
-    selectedModel: selectedModel.value || undefined,
-    selectedModule: selectedModule.value || undefined,
+    ...selection(),
   };
   if (existingIndex >= 0) chatHistory.splice(existingIndex, 1);
   chatHistory.unshift(session);
@@ -202,8 +216,7 @@ const dropMessage = (chatId: string, message: Message) => {
 const saveAppState = async () => {
   await storageService.setAppState({
     activeChatId: currentChatId.value,
-    selectedProvider: selectedProvider.value || undefined,
-    selectedModel: selectedModel.value || undefined,
+    ...selection(),
   });
 };
 
@@ -244,14 +257,13 @@ const exportAllChats = () => {
   showToast(sdk, "All chats exported!", "success");
 };
 
-const handleSelectModel = (
-  provider: string,
-  model: string,
-  displayName: string,
-) => {
-  selectedProvider.value = provider;
-  selectedModel.value = model;
-  selectedModule.value = displayName;
+const handleSelectModel = async (model: AIUpstreamModel) => {
+  selectedProvider.value = model.providerId;
+  selectedModel.value = model.id;
+  if (updateChatSelection(chatHistory, currentChatId.value, selection())) {
+    await persistHistory();
+  }
+  await saveAppState();
 };
 
 const readFile = (file: File, asDataUrl: boolean): Promise<string> =>
@@ -355,7 +367,14 @@ const getReplaySessionRaw = async (
   const response = await sdk.graphql.replaySessionEntries({ id: sessionId });
   const entry = response.replaySession?.activeEntry;
   if (entry === undefined || entry === null) return undefined;
-  return entry.__typename === "ReplayEntryWs" ? entry.http.raw : entry.raw;
+  switch (entry.__typename) {
+    case "ReplayEntryWs":
+      return entry.http.raw;
+    case "ReplayEntryHttpPipeline":
+      return entry.activeHttpEntry?.raw;
+    default:
+      return entry.raw;
+  }
 };
 
 const resolveMessageContent = async (content: string): Promise<string> => {
@@ -392,8 +411,13 @@ const sendMessage = async () => {
   }
   const trimmedMessage = currentMessage.value.trim();
   if (trimmedMessage === "" && attachedFiles.length === 0) return;
-  if (selectedModel.value === "") {
-    showToast(sdk, "Please select an AI model first", "error");
+  const model = activeModel.value;
+  if (model === undefined) {
+    showToast(
+      sdk,
+      "No AI model available. Configure a provider in Caido Settings → AI.",
+      "error",
+    );
     return;
   }
 
@@ -415,8 +439,8 @@ const sendMessage = async () => {
     role: "assistant",
     content: "",
     timestamp: new Date(),
-    provider: selectedProvider.value,
-    model: selectedModel.value,
+    provider: model.providerId,
+    model: model.id,
   };
 
   currentMessages.push(userMessage, assistantMessage);
@@ -482,10 +506,8 @@ const sendMessage = async () => {
       }),
     );
 
-    const model = createModel(sdk, selectedModel.value);
-
     const result = streamText({
-      model,
+      model: createModel(sdk, model),
       system: systemPrompt,
       messages: coreMessages,
       abortSignal: generation.controller.signal,
@@ -630,9 +652,7 @@ onMounted(async () => {
             messages: [...currentMessages],
             timestamp: new Date(),
             messageCount: currentMessages.length,
-            selectedProvider: selectedProvider.value || undefined,
-            selectedModel: selectedModel.value || undefined,
-            selectedModule: selectedModule.value || undefined,
+            ...selection(),
           };
           if (existingIndex >= 0) tempHistory.splice(existingIndex, 1);
           tempHistory.unshift(session);
@@ -652,7 +672,6 @@ onMounted(async () => {
     currentChatId.value = "default";
     selectedProvider.value = "";
     selectedModel.value = "";
-    selectedModule.value = "";
 
     await new Promise((r) => setTimeout(r, 100));
     await loadChatHistory();
@@ -732,9 +751,7 @@ onMounted(async () => {
         :attached-files="attachedFiles"
         :is-loading="isLoading"
         :is-typing="isLoading"
-        :selected-provider="selectedProvider"
-        :selected-model="selectedModel"
-        :selected-module="selectedModule"
+        :selected-model="activeModel"
         @send="sendMessage"
         @stop="stopGeneration"
         @attach-files="handleAttachFiles"
